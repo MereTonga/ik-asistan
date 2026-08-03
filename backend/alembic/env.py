@@ -15,6 +15,7 @@ load_dotenv(dotenv_path=os.path.join(os.path.dirname(__file__), "../../.env"))
 from app.db.session import Base
 from app.models.company import Company
 from app.models.document import Document, DocumentChunk
+from app.models.email import EmailThread, Message
 # Az sonra (Adım 2.2-2.4) yazacağımız modelleri buraya import edeceğiz,
 # şimdilik Base'i tanıtmamız yeterli
 
