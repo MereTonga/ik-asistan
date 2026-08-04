@@ -9,7 +9,6 @@ from app.db.session import Base
 
 EMBEDDING_BOYUTU = 1024  # qwen3-embedding:0.6b'nin ürettiği vektör boyutu
 
-
 class Document(Base):
     __tablename__ = "documents"
 
