@@ -75,3 +75,15 @@ def process_document(file_path: str, document_quality: str | None = None) -> dic
 
     else:
         raise ValueError(f"Desteklenmeyen dosya türü: {extension}")
+
+def chunk_text(text: str, min_length: int = 20) -> list[str]:
+    """Markdown metnini boş satırlara göre paragraf/chunk'lara ayırır.
+    Çok kısa (anlamsız) parçaları eler."""
+    raw_chunks = text.split("\n\n")
+    chunks = [c.strip() for c in raw_chunks if len(c.strip()) >= min_length]
+    return chunks
+
+
+def get_embedding(text: str) -> list[float]:
+    response = client.embed(model=os.getenv("EMBEDDING_MODEL"), input=text)
+    return response["embeddings"][0]

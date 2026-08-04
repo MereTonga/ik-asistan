@@ -62,3 +62,43 @@ def upload_document(
         "source_type": new_document.source_type,
         "extracted_text": new_document.raw_extracted_text,
     }
+
+from app.services.document_processor import chunk_text, get_embedding
+from app.models import DocumentChunk
+
+
+@router.post("/{document_id}/approve")
+def approve_document(document_id: str, db: Session = Depends(get_db)):
+    document = db.query(Document).filter(Document.id == document_id).first()
+    if document is None:
+        raise HTTPException(status_code=404, detail="Doküman bulunamadı")
+
+    if document.status == "approved":
+        raise HTTPException(status_code=400, detail="Bu doküman zaten onaylanmış")
+
+    # 1) Metni chunk'lara ayır
+    chunks = chunk_text(document.raw_extracted_text)
+
+    if len(chunks) == 0:
+        raise HTTPException(status_code=400, detail="Metinden anlamlı chunk çıkarılamadı")
+
+    # 2) Her chunk için embedding hesapla ve kaydet
+    for chunk in chunks:
+        embedding_vector = get_embedding(chunk)
+        new_chunk = DocumentChunk(
+            document_id=document.id,
+            company_id=document.company_id,
+            chunk_text=chunk,
+            embedding=embedding_vector,
+        )
+        db.add(new_chunk)
+
+    # 3) Dokümanı onaylanmış olarak işaretle
+    document.status = "approved"
+    db.commit()
+
+    return {
+        "id": str(document.id),
+        "status": document.status,
+        "chunk_count": len(chunks),
+    }
