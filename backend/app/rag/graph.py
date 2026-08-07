@@ -19,7 +19,6 @@ client = ollama.Client(host=OLLAMA_HOST)
 class RAGState(TypedDict):
     company_id: str
     question: str
-    db_session: object          # SQLAlchemy session (dışarıdan geçirilecek)
     retrieved_chunks: list       # arama sonucu bulunanlar
     has_confident_match: bool    # eşik üstünde en az bir chunk var mı
     answer: str                  # üretilen cevap veya yönlendirme mesajı
@@ -29,7 +28,12 @@ class RAGState(TypedDict):
 # 2) NODE'LAR — her biri State alır, güncellenmiş State döner
 
 def search_node(state: RAGState) -> RAGState:
-    chunks = search_relevant_chunks(state["company_id"], state["question"], state["db_session"])
+    from app.db.session import SessionLocal
+    db = SessionLocal()
+    try:
+        chunks = search_relevant_chunks(state["company_id"], state["question"], db)
+    finally:
+        db.close()
     has_confident = any(c["is_confident"] for c in chunks)
     return {**state, "retrieved_chunks": chunks, "has_confident_match": has_confident}
 
