@@ -8,6 +8,7 @@ from fastapi import Depends
 from app.db.session import SessionLocal
 from app.models import Document, Company
 from app.services.document_processor import process_document
+from app.tasks.document_tasks import process_uploaded_document_task, approve_document_task
 
 router = APIRouter(prefix="/documents", tags=["documents"])
 
@@ -38,29 +39,25 @@ def upload_document(
     with open(saved_path, "wb") as buffer:
         shutil.copyfileobj(file.file, buffer)
 
-    # 2) Karar ağacını çalıştır (Faz 3.2'de yazdığımız servis)
-    try:
-        result = process_document(saved_path, document_quality)
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
-
-    # 3) Document kaydını oluştur (henüz onaylanmamış)
+    # 2) Önce boş bir Document kaydı oluştur (henüz işlenmedi)
     new_document = Document(
         company_id=company_id,
         original_filename=file.filename,
-        source_type=result["source_type"],
+        source_type="pending",
         status="pending_approval",
-        raw_extracted_text=result["extracted_text"],
+        raw_extracted_text=None,
     )
     db.add(new_document)
     db.commit()
     db.refresh(new_document)
 
+    # 3) İşlemeyi Celery'ye devret (arka planda çalışacak)
+    process_uploaded_document_task.delay(str(new_document.id), saved_path, document_quality)
+
     return {
         "id": str(new_document.id),
         "status": new_document.status,
-        "source_type": new_document.source_type,
-        "extracted_text": new_document.raw_extracted_text,
+        "message": "Belge işleme kuyruğa alındı, arka planda işleniyor.",
     }
 
 from app.services.document_processor import chunk_text, get_embedding
@@ -72,33 +69,9 @@ def approve_document(document_id: str, db: Session = Depends(get_db)):
     document = db.query(Document).filter(Document.id == document_id).first()
     if document is None:
         raise HTTPException(status_code=404, detail="Doküman bulunamadı")
-
     if document.status == "approved":
         raise HTTPException(status_code=400, detail="Bu doküman zaten onaylanmış")
 
-    # 1) Metni chunk'lara ayır
-    chunks = chunk_text(document.raw_extracted_text)
+    approve_document_task.delay(document_id)
 
-    if len(chunks) == 0:
-        raise HTTPException(status_code=400, detail="Metinden anlamlı chunk çıkarılamadı")
-
-    # 2) Her chunk için embedding hesapla ve kaydet
-    for chunk in chunks:
-        embedding_vector = get_embedding(chunk)
-        new_chunk = DocumentChunk(
-            document_id=document.id,
-            company_id=document.company_id,
-            chunk_text=chunk,
-            embedding=embedding_vector,
-        )
-        db.add(new_chunk)
-
-    # 3) Dokümanı onaylanmış olarak işaretle
-    document.status = "approved"
-    db.commit()
-
-    return {
-        "id": str(document.id),
-        "status": document.status,
-        "chunk_count": len(chunks),
-    }
+    return {"id": document_id, "message": "Onay işlemi kuyruğa alındı, chunk'lar arka planda oluşturuluyor."}

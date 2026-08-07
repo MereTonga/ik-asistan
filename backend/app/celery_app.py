@@ -10,6 +10,7 @@ celery_app = Celery(
     "ik_asistan",
     broker=REDIS_URL,
     backend=REDIS_URL,
+    include=["app.tasks.document_tasks", "app.tasks.rag_tasks"],
 )
 
 celery_app.conf.update(
