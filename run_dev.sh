@@ -45,7 +45,7 @@ if [ $CHECK_STATUS -eq 0 ]; then
   echo "🎉 4/4 Her şey hazır! Log ekranına bağlanılıyor..."
   echo "ℹ️  (Çıkmak için: Ctrl+B sonra D | Durdurmak için: Ctrl+C)"
   echo "=============================================="
-  sleep 4
+  sleep 2
   tmux attach -t $SESSION
 else
   echo "=============================================="

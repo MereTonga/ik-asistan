@@ -7,7 +7,7 @@ from app.models import DocumentChunk
 from app.services.document_processor import get_embedding
 
 # Az önce psql'den dönen document id'yi buraya yapıştır
-DOCUMENT_ID = "6cbfc090-e63f-4e03-81b2-b705295b9bed" # kendi document_id'n
+DOCUMENT_ID = "a94955b0-f24e-4285-a1b2-d9bb76f1e9d4" # kendi document_id'n
 COMPANY_ID = "4d3ef371-7d0e-4111-91d0-aa8ffe7e0188"  # kendi company_id'n
 
 SAHTE_IK_METNI = """Çalışanlar işe başladıktan 1 yıl sonra yıllık izin hakkı kazanır.
