@@ -20,3 +20,12 @@ celery_app.conf.update(
     timezone="Europe/Istanbul",
     enable_utc=True,
 )
+
+EMAIL_POLL_INTERVAL_SECONDS = float(os.getenv("EMAIL_POLL_INTERVAL_SECONDS", 120))
+
+celery_app.conf.beat_schedule = {
+    "check-new-emails-periodically": {
+        "task": "check_new_emails",
+        "schedule": EMAIL_POLL_INTERVAL_SECONDS,
+    },
+}
