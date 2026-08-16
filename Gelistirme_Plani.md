@@ -329,14 +329,34 @@ ik-asistan/
 
 ## FAZ 6 — E-posta Entegrasyonu
 
-**Yapılacaklar:**
-- Postmark/SendGrid Inbound Parse webhook'u bağlanır
-- `Message-ID` / `In-Reply-To` ile thread hafızası kurulur
-- Giden mail gönderimi test edilir
+**Revize mimari kararı (Faz 5 sonunda tartışılıp değiştirildi):** Postmark/SendGrid Inbound Parse yerine **kendi sunucumuzdan IMAP/SMTP ile doğrudan okuma** tercih edildi — gerekçe: projenin "lokal AI, veri dışarı çıkmıyor" değer önerisiyle tutarlılık (üçüncü parti bir e-posta servisinin araya girmesi bu hikayeyi zayıflatırdı). Kimlik doğrulama için **App Password** (OAuth2 değil — bkz. Bölüm 11 notu), webhook yerine **Celery Beat ile periyodik polling** kullanıldı.
 
-### Faz 6 — Definition of Done
-- [ ] Gerçek bir test e-postası gönderilip otomatik cevap alınıyor
-- [ ] Takip sorusu (aynı thread) önceki bağlamı doğru hatırlıyor
+**Tamamlanan alt adımlar:**
+- [x] **6.1-6.2** — Gmail App Password ile IMAP/SMTP bağlantısı kuruldu, `.env`'e taşındı (`EMAIL_ADDRESS`, `EMAIL_APP_PASSWORD`, `IMAP_SERVER`, `SMTP_SERVER`, `EMAIL_DRY_RUN`, `EMAIL_POLL_INTERVAL_SECONDS`). `imapclient` bağımlılığı eklendi.
+- [x] **6.3** — `app/email_service/reader.py`: `fetch_unseen_emails()` — IMAP `UNSEEN` araması + `BODY.PEEK[]` (okundu işaretlemeden okuma) + `email` modülü ile MIME parse.
+- [x] **6.4** — `app/email_service/processor.py`: iki katmanlı thread eşleştirme (önce `In-Reply-To` ile kesin eşleştirme, bulunamazsa `employee_email` + normalize edilmiş `subject` + 30 günlük pencere ile sezgisel eşleştirme) ve gerçek idempotency (`Message.message_id_header`, DB seviyesinde `unique` kısıtlamalı).
+- [x] **6.5** — `app/email_service/sender.py`: SMTP gönderim, `In-Reply-To`/`References` başlıklarıyla thread'e doğru yerleşme, `EMAIL_DRY_RUN` güvenlik anahtarı.
+- [x] **6.6** — `app/tasks/email_tasks.py`: `check_new_emails_task` — oku → idempotency/şirket/thread kontrolü → RAG'a sor → cevapla → kaydet akışının tamamı.
+- [x] **6.7** — Celery Beat ile periyodik zamanlama (`EMAIL_POLL_INTERVAL_SECONDS`), Redis tabanlı dağıtık kilit (`SET NX EX`) ile eşzamanlı çalışma (race condition) önlendi, her mail kendi `try/except`'i içinde işlenerek hata izolasyonu sağlandı.
+- [x] **6.8** — Gerçek Gmail/Outlook hesapları arasında, 4 farklı senaryoyla (temiz soru, alıntılı takip sorusu, dokümanda olmayan konu, kıdem bazlı çıkarım gereken soru, karma/sınır durumu) uçtan uca doğrulandı.
+
+**Yol boyunca bulunup düzeltilen gerçek sorunlar (öğretici, kayda değer):**
+1. **IMAP `RFC822` fetch'in mail'i otomatik "okundu" işaretlemesi** → `BODY.PEEK[]` ile düzeltildi.
+2. **Charset varsayımı (`utf-8` sabit)** Türkçe karakterleri sessizce siliyordu → `part.get_content_charset()` ile mailin kendi bildirdiği kodlama kullanılarak düzeltildi.
+3. **Aynı e-postanın iki paralel `check_new_emails` çalıştırmasında çakışıp `UniqueViolation` hatası vermesi** (bir görev LLM'i beklerken ikinci poll'ün tetiklenmesi) → Redis `SET NX EX` ile dağıtık kilit eklendi.
+4. **Kilidin `finally` bloğunda silinmeyi unutması** (iki ayrı kod parçası birleştirilirken bir satır kaybolmuştu) → tekrar gözden geçirilip düzeltildi; bu tür "sessiz" hataların kodun gerçek halini (`cat` ile) görmeden tahminle teşhis edilemeyeceği bir kez daha doğrulandı.
+5. **Outlook/Gmail'in "Yanıtla" ile otomatik eklediği alıntı bloğunun (`Gönderen:/Sent:/On ... wrote:`) soru metnine karışması** → regex tabanlı `_strip_quoted_reply()` ile düzeltildi.
+6. **Aynı düzeltmenin ilk denemede çalışmaması** — Outlook'un `\r\n` (Windows tarzı satır sonu) kullanması, `\n` bekleyen regex desenleriyle eşleşmiyordu → önce `\r\n`/`\r` → `\n` normalizasyonu eklenerek düzeltildi.
+
+**Bilinen sınırlamalar (Bölüm 11'e eklenecek):**
+- Alıntı temizleme (`_strip_quoted_reply`) regex tabanlı ve **%100 kapsayıcı değil** — farklı mail istemcilerinin formatları kaçabilir; gerçek üründe `talon` gibi özel bir kütüphaneye geçilmesi önerilir.
+- Bilinmeyen domain'den gelen mailler şu an sessizce atlanıyor — bildirim/log mekanizması yok.
+- `References` başlığı sadece son mesaj ID'sini taşıyor, standart gereği birikimli olması gerekirdi.
+- App Password + Gmail ile sınırlı test edildi; OAuth2 ve farklı sağlayıcılar (Outlook/Exchange kurumsal IMAP) test edilmedi.
+
+**Faz 7 için not (kullanıcı önerisi):** Gerçek e-posta göndermeden test yapabilmek için `/test` adlı bir frontend bölümü ve `test_emails.json` üzerinden senaryo seçimi planlanıyor — bu, `check_new_emails_task`'ın IMAP okuma adımını atlayıp aynı iç mantığı (idempotency, thread eşleştirme, RAG, gönderim) doğrudan tetikleyen bir endpoint ile kod tekrarı olmadan uygulanabilir.
+
+**Faz 6 tamamlandı.**
 
 ---
 
@@ -390,9 +410,9 @@ tmux attach -t ik-dev     # log ekranına geri dön
 ```
 
 **Bilinen sınırlamalar / ileri iyileştirme notları:**
-- Sabit `sleep 10`, garanti bir bekleme değil — yavaş açılışlarda health-check erken tetiklenip yanlış "başarısız" gösterebilir. İleride sabit bekleme yerine "N saniyeye kadar dene" tarzı bir retry döngüsü daha dayanıklı olur.
-- `check_celery_beat`, gerçek zamanlama işlevselliğini değil, sadece sürecin var olduğunu (`pgrep`) doğruluyor — bir heuristic, kesin fonksiyonel test değil.
-- Simetrik bir `stop_dev.sh` henüz yok (durdurma elle: `Ctrl+C` + `docker compose down`).
+- ~~Sabit `sleep 10`, garanti bir bekleme değil~~ — düşük öncelikli, henüz ele alınmadı.
+- ~~`check_celery_beat`, gerçek zamanlama işlevselliğini değil, sadece sürecin var olduğunu (`pgrep`) doğruluyor~~ — bilinen, kabul edilen bir sınırlama.
+- **Çözüldü:** `stop_dev.sh` artık kapatmadan önce `backend/scripts/check_active_tasks.py` ile aktif Celery görevi olup olmadığını kontrol ediyor, varsa kullanıcıya onay soruyor (yarıda kalmış bir OCR/RAG görevinin sessizce kaybolmasını önlemek için) — ve kapatma sonrasında Docker/port/tmux durumunu doğruluyor.
 - `honcho` (Python paketi) ve `tmux` (sistem paketi), henüz bir `requirements.txt`/README'de belgelenmiş bağımlılık değil — bu dosyalar oluşturulduğunda eklenmeli.
 
 ---
@@ -417,7 +437,7 @@ git commit -m "Faz X.Y: ..."
 **Tamamlanan:** Faz 0, Faz 1, Faz 2 (tüm alt adımlarıyla).
 **Sırada:** Faz 3 — FastAPI + Senkron Ingestion Akışı (`POST /documents/upload`, `POST /documents/{id}/approve` endpoint'leri).
 
-**Tamamlanan (ek):** Geliştirme ortamı süreç yönetimi (Honcho + tmux + genişletilmiş `check_connections.py`) kuruldu.
-**Faz 6 revize kararları (henüz kodlanmadı, tasarım netleşti):** E-posta entegrasyonu için Postmark/SendGrid Inbound Parse yerine **kendi sunucumuzdan IMAP/SMTP ile doğrudan okuma** tercih edildi (gizlilik/mahremiyet önceliği ile tutarlılık için) — kimlik doğrulama için **App Password** kullanılacak (OAuth2 değil, gerçek ürün notu olarak Bölüm 11'e eklenmeli), webhook yerine **Celery Beat ile periyodik polling** (öneri: 2 dakikada bir) kurulacak, mükerrer işlemeye karşı `Message-ID` bazlı bir idempotency kontrolü eklenecek.
+**Tamamlanan:** Faz 0, Faz 1, Faz 2, Faz 3, Faz 4, Faz 5, Faz 6 (tamamı) + geliştirme ortamı süreç yönetimi (Honcho/tmux, aktif görev kontrolü).
+**Sırada:** Faz 7 — Next.js Paneli (OCR onay ekranı, belge yönetimi, analitik + kullanıcı önerisiyle eklenen `/test` senaryo simülasyon bölümü).
 
 Yeni bir sohbette kaldığımız yerden devam edilecekse: bu dosya (`Gelistirme_Plani.md`) ve `Proje_Dokumantasyonu.md` yeterlidir — ikisi birlikte projenin tüm mimari gerekçelerini, alınan kararları ve şu ana kadarki ilerlemeyi kapsar.
