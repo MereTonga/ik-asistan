@@ -33,6 +33,7 @@ class Message(Base):
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     thread_id = Column(UUID(as_uuid=True), ForeignKey("email_threads.id"), nullable=False)
+    message_id_header = Column(String, nullable=True, unique=True)
 
     # Bu mesaj çalışandan mı geldi, sistem mi cevap verdi?
     sender_type = Column(String, nullable=False)  # 'employee' | 'ai_system' | 'hr_staff'
