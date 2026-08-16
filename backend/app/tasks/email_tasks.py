@@ -1,0 +1,90 @@
+from app.celery_app import celery_app
+from app.db.session import SessionLocal
+from app.models import Message
+from app.email_service.reader import fetch_unseen_emails
+from app.email_service.sender import send_reply
+from app.email_service.processor import (
+    is_already_processed,
+    find_company_by_email_domain,
+    find_or_create_thread,
+)
+from app.rag.graph import build_rag_graph
+
+
+@celery_app.task(name="check_new_emails")
+def check_new_emails_task():
+    """
+    Celery Beat tarafından periyodik olarak tetiklenir.
+    Gelen kutusunu kontrol eder, her yeni maili işler.
+    """
+    db = SessionLocal()
+    processed_count = 0
+    skipped_count = 0
+
+    try:
+        emails = fetch_unseen_emails()
+
+        for email_data in emails:
+            # 1) Idempotency kontrolü
+            if is_already_processed(email_data["message_id"], db):
+                skipped_count += 1
+                continue
+
+            # 2) Şirketi bul
+            company = find_company_by_email_domain(email_data["from_address"], db)
+            if company is None:
+                # Bilinmeyen domain'den mail - şimdilik atlıyoruz (ileri faz notu: bildirim/log)
+                skipped_count += 1
+                continue
+
+            # 3) Thread eşleştir/oluştur
+            thread, is_new = find_or_create_thread(email_data, str(company.id), db)
+
+            # 4) Gelen mesajı kaydet
+            incoming_message = Message(
+                thread_id=thread.id,
+                message_id_header=email_data["message_id"],
+                sender_type="employee",
+                body=email_data["body"],
+            )
+            db.add(incoming_message)
+
+            # 5) RAG akışını çalıştır
+            graph = build_rag_graph()
+            rag_result = graph.invoke({
+                "company_id": str(company.id),
+                "question": email_data["body"],
+                "retrieved_chunks": [],
+                "has_confident_match": False,
+                "answer": "",
+                "was_escalated": False,
+            })
+
+            # 6) Cevabı gönder
+            sent_message_id = send_reply(
+                to_address=email_data["from_address"],
+                subject=email_data["subject"],
+                body=rag_result["answer"],
+                in_reply_to_message_id=email_data["message_id"],
+            )
+
+            # 7) Giden mesajı kaydet
+            outgoing_message = Message(
+                thread_id=thread.id,
+                message_id_header=sent_message_id,
+                sender_type="ai_system",
+                body=rag_result["answer"],
+                was_escalated=rag_result["was_escalated"],
+            )
+            db.add(outgoing_message)
+
+            if rag_result["was_escalated"]:
+                thread.status = "escalated"
+
+            db.commit()
+            processed_count += 1
+
+        return {"processed": processed_count, "skipped": skipped_count}
+
+    finally:
+        db.close()
