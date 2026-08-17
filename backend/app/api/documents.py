@@ -1,6 +1,7 @@
 import os
 import shutil
 import uuid as uuid_lib
+from typing import Optional
 from fastapi import APIRouter, UploadFile, File, Form, HTTPException
 from sqlalchemy.orm import Session
 from fastapi import Depends
@@ -75,3 +76,37 @@ def approve_document(document_id: str, db: Session = Depends(get_db)):
     approve_document_task.delay(document_id)
 
     return {"id": document_id, "message": "Onay işlemi kuyruğa alındı, chunk'lar arka planda oluşturuluyor."}
+
+@router.get("")
+def list_documents(status: Optional[str] = None, db: Session = Depends(get_db)):
+    query = db.query(Document)
+    if status:
+        query = query.filter(Document.status == status)
+    documents = query.order_by(Document.created_at.desc()).all()
+
+    return [
+        {
+            "id": str(d.id),
+            "original_filename": d.original_filename,
+            "source_type": d.source_type,
+            "status": d.status,
+            "created_at": d.created_at.isoformat() if d.created_at else None,
+        }
+        for d in documents
+    ]
+
+
+@router.get("/{document_id}")
+def get_document(document_id: str, db: Session = Depends(get_db)):
+    document = db.query(Document).filter(Document.id == document_id).first()
+    if document is None:
+        raise HTTPException(status_code=404, detail="Doküman bulunamadı")
+
+    return {
+        "id": str(document.id),
+        "original_filename": document.original_filename,
+        "source_type": document.source_type,
+        "status": document.status,
+        "raw_extracted_text": document.raw_extracted_text,
+        "created_at": document.created_at.isoformat() if document.created_at else None,
+    }
