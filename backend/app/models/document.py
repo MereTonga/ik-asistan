@@ -16,6 +16,7 @@ class Document(Base):
     company_id = Column(UUID(as_uuid=True), ForeignKey("companies.id"), nullable=False)
 
     original_filename = Column(String, nullable=False)
+    stored_filename = Column(String, nullable=True)  # YENİ SATIR - diskteki gerçek dosya adı
     source_type = Column(String, nullable=False)  # 'pdf_text' | 'ocr_clean' | 'ocr_complex'
     status = Column(String, nullable=False, default="pending_approval")  # 'pending_approval' | 'approved'
 

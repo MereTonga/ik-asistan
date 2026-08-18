@@ -2,13 +2,16 @@ import os
 import shutil
 import uuid as uuid_lib
 from typing import Optional
-from fastapi import APIRouter, UploadFile, File, Form, HTTPException
-from sqlalchemy.orm import Session
 from fastapi import Depends
+from pydantic import BaseModel
+from sqlalchemy.orm import Session
+from fastapi import APIRouter, UploadFile, File, Form, HTTPException
 
+from app.models import DocumentChunk
 from app.db.session import SessionLocal
 from app.models import Document, Company
 from app.services.document_processor import process_document
+from app.services.document_processor import chunk_text, get_embedding
 from app.tasks.document_tasks import process_uploaded_document_task, approve_document_task
 
 router = APIRouter(prefix="/documents", tags=["documents"])
@@ -16,6 +19,8 @@ router = APIRouter(prefix="/documents", tags=["documents"])
 UPLOAD_DIR = os.path.join(os.path.dirname(__file__), "../../uploads")
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 
+class DocumentTextUpdate(BaseModel):
+    raw_extracted_text: str
 
 def get_db():
     db = SessionLocal()
@@ -44,6 +49,7 @@ def upload_document(
     new_document = Document(
         company_id=company_id,
         original_filename=file.filename,
+        stored_filename=saved_filename,
         source_type="pending",
         status="pending_approval",
         raw_extracted_text=None,
@@ -60,9 +66,6 @@ def upload_document(
         "status": new_document.status,
         "message": "Belge işleme kuyruğa alındı, arka planda işleniyor.",
     }
-
-from app.services.document_processor import chunk_text, get_embedding
-from app.models import DocumentChunk
 
 
 @router.post("/{document_id}/approve")
@@ -90,11 +93,10 @@ def list_documents(status: Optional[str] = None, db: Session = Depends(get_db)):
             "original_filename": d.original_filename,
             "source_type": d.source_type,
             "status": d.status,
-            "created_at": d.created_at.isoformat() if d.created_at else None,
+            "created_at": d.created_at.isoformat() + "Z" if d.created_at else None,
         }
         for d in documents
     ]
-
 
 @router.get("/{document_id}")
 def get_document(document_id: str, db: Session = Depends(get_db)):
@@ -105,8 +107,24 @@ def get_document(document_id: str, db: Session = Depends(get_db)):
     return {
         "id": str(document.id),
         "original_filename": document.original_filename,
+        "stored_filename": document.stored_filename,
         "source_type": document.source_type,
         "status": document.status,
         "raw_extracted_text": document.raw_extracted_text,
-        "created_at": document.created_at.isoformat() if document.created_at else None,
+        "created_at": document.created_at.isoformat() + "Z" if document.created_at else None,
     }
+    
+@router.patch("/{document_id}")
+def update_document_text(document_id: str, payload: DocumentTextUpdate, db: Session = Depends(get_db)):
+    document = db.query(Document).filter(Document.id == document_id).first()
+    
+    if document is None:
+        raise HTTPException(status_code=404, detail="Doküman bulunamadı")
+
+    if document.status == "approved":
+        raise HTTPException(status_code=400, detail="Onaylanmış bir dokümanın metni değiştirilemez")
+
+    document.raw_extracted_text = payload.raw_extracted_text
+    db.commit()
+
+    return {"id": str(document.id), "message": "Metin güncellendi"}
