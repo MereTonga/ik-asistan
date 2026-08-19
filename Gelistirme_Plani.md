@@ -353,6 +353,9 @@ ik-asistan/
 - Bilinmeyen domain'den gelen mailler şu an sessizce atlanıyor — bildirim/log mekanizması yok.
 - `References` başlığı sadece son mesaj ID'sini taşıyor, standart gereği birikimli olması gerekirdi.
 - App Password + Gmail ile sınırlı test edildi; OAuth2 ve farklı sağlayıcılar (Outlook/Exchange kurumsal IMAP) test edilmedi.
+- **Domain eşleştirmesi "bir domain = bir şirket" varsayımına dayanıyor:** Gerçek dünyada çalışanlar/stajyerler/dış paydaşlar (staj deneyiminden gelen gerçek örnek: Koton'un kendi domain'i olsa da stajyer kişisel Outlook'undan yazabiliyor) kişisel mail adresleri kullanabiliyor — bu kişiler `unknown_domain` olarak atlanıp sistemle hiç iletişim kuramıyor. Gerçek çözüm: `company_id` + tam e-posta adresi tutan ayrı bir "yetkili gönderen" (`authorized_senders`/`employees`) tablosu eklenmesi gerekir — bu, ciddi bir şema/mantık genişlemesi olduğu için MVP kapsamına alınmadı, bilinçli bir sınırlama olarak bırakıldı.
+- **Paylaşılan/genel domain riski:** Eğer küçük bir şirket kendi domain'i olmadığı için `email_domain` alanına `gmail.com`/`outlook.com` gibi paylaşılan bir domain kaydederse, o domain'deki **herhangi bir kullanıcı** yanlışlıkla o şirketin çalışanı sayılıp şirketin İK verisine erişebilir — bu, onboarding sürecinde (gerçek ürün senaryosunda) engellenmesi/uyarılması gereken bir veri sızıntısı riski.
+- **"Her gelen mail bir İK sorusudur" varsayımı:** Sistem, gelen mailin niyetini (İK sorusu mu, iş başvurusu mu, spam mı, alakasız bir konu mu) sınıflandırmıyor — doğrudan RAG'a soruyor. Yanlış niyet sınıflandırması riski var; gerçek üründe bir "niyet tespiti" ön adımı gerekebilir, bu MVP kapsamının dışında bırakıldı.
 
 **Faz 7 için not (kullanıcı önerisi):** Gerçek e-posta göndermeden test yapabilmek için `/test` adlı bir frontend bölümü ve `test_emails.json` üzerinden senaryo seçimi planlanıyor — bu, `check_new_emails_task`'ın IMAP okuma adımını atlayıp aynı iç mantığı (idempotency, thread eşleştirme, RAG, gönderim) doğrudan tetikleyen bir endpoint ile kod tekrarı olmadan uygulanabilir.
 
@@ -437,7 +440,7 @@ git commit -m "Faz X.Y: ..."
 **Tamamlanan:** Faz 0, Faz 1, Faz 2 (tüm alt adımlarıyla).
 **Sırada:** Faz 3 — FastAPI + Senkron Ingestion Akışı (`POST /documents/upload`, `POST /documents/{id}/approve` endpoint'leri).
 
-**Tamamlanan:** Faz 0, Faz 1, Faz 2, Faz 3, Faz 4, Faz 5, Faz 6 (tamamı) + geliştirme ortamı süreç yönetimi (Honcho/tmux, aktif görev kontrolü).
-**Sırada:** Faz 7 — Next.js Paneli (OCR onay ekranı, belge yönetimi, analitik + kullanıcı önerisiyle eklenen `/test` senaryo simülasyon bölümü).
+**Tamamlanan:** Faz 0, Faz 1, Faz 2, Faz 3, Faz 4, Faz 5, Faz 6 (tamamı) + geliştirme ortamı süreç yönetimi (Honcho/tmux, aktif görev kontrolü) + Faz 7.1-7.5 (Next.js iskeleti, Tailwind+shadcn, CORS, OCR onay ekranı [görsel+metin düzenleme dahil], `/test` senaryo simülasyon paneli — `test_emails.json` ile 22 senaryo).
+**Sırada:** Faz 7.6 — Belge Yönetimi (genel görünüm, tüm durumlar).
 
 Yeni bir sohbette kaldığımız yerden devam edilecekse: bu dosya (`Gelistirme_Plani.md`) ve `Proje_Dokumantasyonu.md` yeterlidir — ikisi birlikte projenin tüm mimari gerekçelerini, alınan kararları ve şu ana kadarki ilerlemeyi kapsar.
