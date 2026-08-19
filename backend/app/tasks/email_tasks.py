@@ -1,10 +1,5 @@
 import os
 import redis
-
-redis_client = redis.from_url(os.getenv("REDIS_URL"))
-EMAIL_CHECK_LOCK_KEY = "email_check_lock"
-EMAIL_CHECK_LOCK_TTL = 300  # saniye - bir görev bu süreden uzun sürerse kilit kendiliğinden düşer
-
 from app.celery_app import celery_app
 from app.db.session import SessionLocal
 from app.models import Message
@@ -18,17 +13,81 @@ from app.email_service.processor import (
 from app.rag.graph import build_rag_graph
 
 
+redis_client = redis.from_url(os.getenv("REDIS_URL"))
+EMAIL_CHECK_LOCK_KEY = "email_check_lock"
+EMAIL_CHECK_LOCK_TTL = 300
+
+def process_single_email(email_data: dict, db) -> dict:
+    """
+    Tek bir e-postayı baştan sona işler: idempotency, thread eşleştirme,
+    RAG, cevaplama, kayıt. Hem gerçek IMAP akışı hem de /test simülasyonu
+    bu fonksiyonu kullanır - mantık tek bir yerde yaşar.
+    """
+    if is_already_processed(email_data["message_id"], db):
+        return {"status": "skipped", "reason": "already_processed"}
+
+    company = find_company_by_email_domain(email_data["from_address"], db)
+    if company is None:
+        return {"status": "skipped", "reason": "unknown_domain"}
+
+    thread, is_new = find_or_create_thread(email_data, str(company.id), db)
+
+    incoming_message = Message(
+        thread_id=thread.id,
+        message_id_header=email_data["message_id"],
+        sender_type="employee",
+        body=email_data["body"],
+    )
+    db.add(incoming_message)
+
+    graph = build_rag_graph()
+    rag_result = graph.invoke({
+        "company_id": str(company.id),
+        "question": email_data["body"],
+        "retrieved_chunks": [],
+        "has_confident_match": False,
+        "answer": "",
+        "was_escalated": False,
+    })
+
+    sent_message_id = send_reply(
+        to_address=email_data["from_address"],
+        subject=email_data["subject"],
+        body=rag_result["answer"],
+        in_reply_to_message_id=email_data["message_id"],
+    )
+
+    outgoing_message = Message(
+        thread_id=thread.id,
+        message_id_header=sent_message_id,
+        sender_type="ai_system",
+        body=rag_result["answer"],
+        was_escalated=rag_result["was_escalated"],
+    )
+    db.add(outgoing_message)
+
+    if rag_result["was_escalated"]:
+        thread.status = "escalated"
+
+    db.commit()
+
+    return {
+        "status": "processed",
+        "answer": rag_result["answer"],
+        "was_escalated": rag_result["was_escalated"],
+    }
+
+
 @celery_app.task(name="check_new_emails")
 def check_new_emails_task():
     """
     Celery Beat tarafından periyodik olarak tetiklenir.
-    Gelen kutusunu kontrol eder, her yeni maili işler.
+    Gelen kutusunu kontrol eder, her yeni maili process_single_email ile işler.
     """
-    # Kilit kontrolü: Eğer bir önceki görev hâlâ çalışıyorsa, bu çalıştırmayı atla
     lock_acquired = redis_client.set(EMAIL_CHECK_LOCK_KEY, "1", nx=True, ex=EMAIL_CHECK_LOCK_TTL)
     if not lock_acquired:
         return {"skipped_run": True, "reason": "Önceki çalıştırma hâlâ devam ediyor"}
-    
+
     db = SessionLocal()
     processed_count = 0
     skipped_count = 0
@@ -38,71 +97,17 @@ def check_new_emails_task():
 
         for email_data in emails:
             try:
-                # 1) Idempotency kontrolü
-                if is_already_processed(email_data["message_id"], db):
+                result = process_single_email(email_data, db)
+                if result["status"] == "processed":
+                    processed_count += 1
+                else:
                     skipped_count += 1
-                    continue
-
-                # 2) Şirketi bul
-                company = find_company_by_email_domain(email_data["from_address"], db)
-                if company is None:
-                    # Bilinmeyen domain'den mail - şimdilik atlıyoruz (ileri faz notu: bildirim/log)
-                    skipped_count += 1
-                    continue
-
-                # 3) Thread eşleştir/oluştur
-                thread, is_new = find_or_create_thread(email_data, str(company.id), db)
-
-                # 4) Gelen mesajı kaydet
-                incoming_message = Message(
-                    thread_id=thread.id,
-                    message_id_header=email_data["message_id"],
-                    sender_type="employee",
-                    body=email_data["body"],
-                )
-                db.add(incoming_message)
-
-                # 5) RAG akışını çalıştır
-                graph = build_rag_graph()
-                rag_result = graph.invoke({
-                    "company_id": str(company.id),
-                    "question": email_data["body"],
-                    "retrieved_chunks": [],
-                    "has_confident_match": False,
-                    "answer": "",
-                    "was_escalated": False,
-                })
-
-                # 6) Cevabı gönder
-                sent_message_id = send_reply(
-                    to_address=email_data["from_address"],
-                    subject=email_data["subject"],
-                    body=rag_result["answer"],
-                    in_reply_to_message_id=email_data["message_id"],
-                )
-
-                # 7) Giden mesajı kaydet
-                outgoing_message = Message(
-                    thread_id=thread.id,
-                    message_id_header=sent_message_id,
-                    sender_type="ai_system",
-                    body=rag_result["answer"],
-                    was_escalated=rag_result["was_escalated"],
-                )
-                db.add(outgoing_message)
-
-                if rag_result["was_escalated"]:
-                    thread.status = "escalated"
-
-                db.commit()
-                processed_count += 1
-                
             except Exception as e:
                 db.rollback()
                 print(f"Mail işlenirken hata oluştu (message_id={email_data.get('message_id')}): {e}")
                 skipped_count += 1
                 continue
-            
+
         return {"processed": processed_count, "skipped": skipped_count}
 
     finally:
