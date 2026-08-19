@@ -99,7 +99,7 @@ def check_celery_worker():
         sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
         from app.celery_app import celery_app
 
-        insp = celery_app.control.inspect(timeout=2.0)
+        insp = celery_app.control.inspect(timeout=10.0)
         pings = insp.ping()
         if pings:
             workers = list(pings.keys())
