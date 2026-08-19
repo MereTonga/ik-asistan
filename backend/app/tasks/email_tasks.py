@@ -17,16 +17,20 @@ redis_client = redis.from_url(os.getenv("REDIS_URL"))
 EMAIL_CHECK_LOCK_KEY = "email_check_lock"
 EMAIL_CHECK_LOCK_TTL = 300
 
-def process_single_email(email_data: dict, db) -> dict:
+def process_single_email(email_data: dict, db, company_override=None) -> dict:
     """
     Tek bir e-postayı baştan sona işler: idempotency, thread eşleştirme,
     RAG, cevaplama, kayıt. Hem gerçek IMAP akışı hem de /test simülasyonu
     bu fonksiyonu kullanır - mantık tek bir yerde yaşar.
+    
+    company_override: Verilirse, domain'e göre arama yapılmaz, doğrudan bu
+    şirket kullanılır (test panelinde, çeşitli domain'lerden gelen simüle
+    edilmiş maillerin tek bir test şirketine bağlanabilmesi için).
     """
     if is_already_processed(email_data["message_id"], db):
         return {"status": "skipped", "reason": "already_processed"}
 
-    company = find_company_by_email_domain(email_data["from_address"], db)
+    company = company_override or find_company_by_email_domain(email_data["from_address"], db)
     if company is None:
         return {"status": "skipped", "reason": "unknown_domain"}
 
