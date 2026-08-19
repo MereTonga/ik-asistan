@@ -1,6 +1,6 @@
 import os
 from fastapi import FastAPI
-from app.api import documents, test_panel, analytics
+from app.api import documents, test_panel, analytics, companies
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from app import models  # noqa: F401 - tüm modelleri SQLAlchemy'ye tanıtmak için
@@ -20,6 +20,7 @@ app.mount("/uploads", StaticFiles(directory=UPLOAD_DIR), name="uploads")
 app.include_router(documents.router)
 app.include_router(test_panel.router)
 app.include_router(analytics.router)
+app.include_router(companies.router)
 
 @app.get("/")
 def read_root():
