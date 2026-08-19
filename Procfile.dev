@@ -1,0 +1,4 @@
+web: cd backend && uvicorn app.main:app --reload --port 8000
+worker: cd backend && celery -A app.celery_app worker --loglevel=info
+beat: cd backend && celery -A app.celery_app beat --loglevel=info
+nextjs: cd frontend && npm run dev

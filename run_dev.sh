@@ -14,11 +14,11 @@ docker compose up -d
 
 # 2. Tmux oturumunu ve Honcho'yu arka planda başlat
 echo ""
-echo "🚀 2/4 Honcho (FastAPI + Celery) ayağa kaldırılıyor..."
+echo "🚀 2/4 Honcho (FastAPI + Celery + Next.js) ayağa kaldırılıyor..."
 tmux has-session -t $SESSION 2>/dev/null
 
 if [ $? != 0 ]; then
-  tmux new-session -d -s $SESSION -c $BACKEND_DIR "source ../.venv/bin/activate && honcho start -f Procfile.dev"
+  tmux new-session -d -s $SESSION -c $PROJECT_DIR "source .venv/bin/activate && honcho start -f Procfile.dev"
   echo "✅ Servisler arka planda başlatıldı."
 else
   echo "ℹ️ '$SESSION' oturumu zaten çalışıyor."

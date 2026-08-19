@@ -68,6 +68,30 @@ def check_fastapi():
         return False
 
 
+def check_nextjs():
+    """Next.js ana sayfasına erişimi ve temel HTML yanıtını kontrol eder."""
+    frontend_url = "http://127.0.0.1:5300"
+    try:
+        req = urllib.request.Request(
+            frontend_url, headers={"User-Agent": "HealthCheck"}
+        )
+        with urllib.request.urlopen(req, timeout=3) as resp:
+            if resp.status == 200:
+                body = resp.read().decode("utf-8", errors="ignore").lower()
+                if "<html" in body or "<!doctype html" in body:
+                    print(f"✅ Next.js Sunucusu OK ({frontend_url}).")
+                    return True
+                else:
+                    print("⚠️ Next.js Beklenmeyen Yanıt: HTML içeriği bulunamadı.")
+                    return False
+            else:
+                print(f"❌ Next.js HTTP Hatası: Kod {resp.status}")
+                return False
+    except Exception as e:
+        print(f"❌ Next.js Sunucusu ULAŞILAMAZ ({frontend_url}): {e}")
+        return False
+
+
 def check_celery_worker():
     """Celery worker'larına ping atarak canlı olup olmadıklarını kontrol eder."""
     try:
@@ -120,6 +144,7 @@ if __name__ == "__main__":
         ("Redis", check_redis),
         ("Ollama", check_ollama),
         ("FastAPI", check_fastapi),
+        ("Next.js", check_nextjs),
         ("Celery Worker", check_celery_worker),
         ("Celery Beat", check_celery_beat),
     ]

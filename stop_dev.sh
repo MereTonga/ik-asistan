@@ -29,7 +29,7 @@ if tmux has-session -t $SESSION 2>/dev/null; then
     fi
   fi
 
-  echo "[*] Honcho ve Python servisleri (FastAPI, Celery) durduruluyor..."
+  echo "[*] Honcho servisleri (FastAPI, Celery, Next.js) durduruluyor..."
   tmux send-keys -t $SESSION C-c
   sleep 5
   tmux kill-session -t $SESSION 2>/dev/null
@@ -58,6 +58,12 @@ if ss -tln 2>/dev/null | grep -q ':8000 '; then
   echo "⚠️ 8000 portu hâlâ dinleniyor (FastAPI tam kapanmamış olabilir)."
 else
   echo "✅ 8000 portu boş (FastAPI kapandı)."
+fi
+
+if ss -tln 2>/dev/null | grep -q ':5300 '; then
+  echo "⚠️ 5300 portu hâlâ dinleniyor (Next.js tam kapanmamış olabilir)."
+else
+  echo "✅ 5300 portu boş (Next.js kapandı)."
 fi
 
 if tmux has-session -t $SESSION 2>/dev/null; then
