@@ -356,6 +356,7 @@ ik-asistan/
 - **Domain eşleştirmesi "bir domain = bir şirket" varsayımına dayanıyor:** Gerçek dünyada çalışanlar/stajyerler/dış paydaşlar (staj deneyiminden gelen gerçek örnek: Koton'un kendi domain'i olsa da stajyer kişisel Outlook'undan yazabiliyor) kişisel mail adresleri kullanabiliyor — bu kişiler `unknown_domain` olarak atlanıp sistemle hiç iletişim kuramıyor. Gerçek çözüm: `company_id` + tam e-posta adresi tutan ayrı bir "yetkili gönderen" (`authorized_senders`/`employees`) tablosu eklenmesi gerekir — bu, ciddi bir şema/mantık genişlemesi olduğu için MVP kapsamına alınmadı, bilinçli bir sınırlama olarak bırakıldı.
 - **Paylaşılan/genel domain riski:** Eğer küçük bir şirket kendi domain'i olmadığı için `email_domain` alanına `gmail.com`/`outlook.com` gibi paylaşılan bir domain kaydederse, o domain'deki **herhangi bir kullanıcı** yanlışlıkla o şirketin çalışanı sayılıp şirketin İK verisine erişebilir — bu, onboarding sürecinde (gerçek ürün senaryosunda) engellenmesi/uyarılması gereken bir veri sızıntısı riski.
 - **"Her gelen mail bir İK sorusudur" varsayımı:** Sistem, gelen mailin niyetini (İK sorusu mu, iş başvurusu mu, spam mı, alakasız bir konu mu) sınıflandırmıyor — doğrudan RAG'a soruyor. Yanlış niyet sınıflandırması riski var; gerçek üründe bir "niyet tespiti" ön adımı gerekebilir, bu MVP kapsamının dışında bırakıldı.
+- **Kimlik doğrulama (authentication) hiç yok:** Projede baştan beri örtük bir varsayım vardı — "tek test şirketi, auth kapsam dışı." Faz 7.7'de bu somut şekilde ortaya çıktı: frontend'de `company_id` sabit kodlanmış (`TEST_COMPANY_ID`), hiçbir endpoint "bu isteği atan gerçekten bu şirkete mi ait" diye kontrol etmiyor. Gerçek ürün senaryosunda bu, **ilk yapılması gereken** iyileştirmelerden biri olurdu — kullanıcı/şifre (ya da SSO) sistemi, oturum/token bazlı `company_id` çözümü, her endpoint'e yetkilendirme kontrolü eklenmesi gerekir. Bilinçli olarak MVP kapsamı dışında bırakıldı (portföy/demo amacına yetiyor, gerçek çok kullanıcılı bir ürün için yetersiz).
 
 **Faz 7 için not (kullanıcı önerisi):** Gerçek e-posta göndermeden test yapabilmek için `/test` adlı bir frontend bölümü ve `test_emails.json` üzerinden senaryo seçimi planlanıyor — bu, `check_new_emails_task`'ın IMAP okuma adımını atlayıp aynı iç mantığı (idempotency, thread eşleştirme, RAG, gönderim) doğrudan tetikleyen bir endpoint ile kod tekrarı olmadan uygulanabilir.
 
@@ -365,12 +366,36 @@ ik-asistan/
 
 ## FAZ 7 — Next.js Paneli
 
-**Yapılacaklar:**
-- OCR onay ekranı (orijinal görsel / Markdown yan yana)
-- Belge yönetimi, analitik ekranı
+**Öğrenme yaklaşımı:** Next.js/React ile hiç deneyim olmadığı için, her alt adımda önce izole/küçük bir doğrulama yapılıp üzerine inşa edildi (Faz 1'deki "izole test" felsefesinin frontend karşılığı).
 
-### Faz 7 — Definition of Done
-- [ ] İK personeli tüm akışı (yükleme → onay) arayüzden, API'ye elle istek atmadan tamamlayabiliyor
+**Tamamlanan alt adımlar:**
+- [x] **7.1** — Next.js iskeleti (`create-next-app`, TypeScript + Tailwind + App Router), Node.js/npm nvm ile kuruldu.
+- [x] **7.2** — Tailwind izole doğrulandı; shadcn/ui kuruldu (button, card, badge, table), test kartıyla doğrulandı.
+- [x] **7.3** — CORS kavramı öğrenilip FastAPI'ye eklendi (`allow_origins=["http://localhost:3000"]`), `useState`/`useEffect`/`fetch` ile gerçek bir API çağrısı uçtan uca doğrulandı.
+- [x] **7.4** — OCR Onay Ekranı:
+  - 7.4.1 — `GET /documents` (durum filtreli) ve `GET /documents/{id}` endpoint'leri.
+  - 7.4.2 — `StaticFiles` ile `uploads/` klasörü tarayıcıya servis edildi.
+  - 7.4.3 — Next.js'te onay bekleyen belgeler listeleme sayfası (`/documents`).
+  - 7.4.4 — Detay sayfası (`/documents/[id]`): orijinal görsel + OCR metni yan yana, Onayla butonu.
+  - 7.4.5 — OCR metnini düzenleyip kaydedebilme (`PATCH /documents/{id}`, `textarea` + "Kaydet"/"Onayla" ayrı butonlar).
+- [x] **7.5** — `/test` Senaryo Simülasyon Paneli:
+  - 7.5.1 — `test_emails.json` (22 senaryo) + `GET /test/scenarios`.
+  - 7.5.2 — `process_single_email` fonksiyonu ayrıştırıldı (IMAP'tan bağımsız, tekrar kullanılabilir hale getirildi — kod tekrarı önlendi).
+  - 7.5.3 — `POST /test/simulate/{index}` — IMAP'ı atlayıp doğrudan senaryoyu işleyen endpoint, `company_override` ile domain kontrolü esnekleştirildi.
+  - 7.5.4 — Next.js `/test` sayfası, senaryo kartları + tek tıkla çalıştırma.
+- [x] **7.6** — Belge Yönetimi: `/documents` sayfası tüm durumları gösterecek + filtrelenebilir hale getirildi, duruma göre renkli rozet.
+- [x] **7.7** — Analitik: `GET /analytics/summary` (toplam soru, escalation sayısı/oranı, en çok yönlendirilen konular — `GROUP BY` ile), Next.js `/analytics` panosu.
+
+**Yol boyunca bulunup düzeltilen sorunlar:**
+1. **create-next-app'ın güncel sürümü `src/` klasörünü kullanmıyor** (eski dokümantasyon varsayımından farklı) — yol buna göre uyarlandı.
+2. **Orijinal dosya adı ile diskteki gerçek (UUID'li) dosya adı karıştırıldı** → `Document` modeline `stored_filename` kolonu eklenip ayrıştırıldı (migration ile).
+3. **UTC tarihlerin frontend'de yerel saate çevrilmemesi** → API'den dönen ISO tarih string'ine `"Z"` eklenerek (UTC olduğu açıkça belirtilerek) tarayıcının otomatik dönüşüm yapması sağlandı.
+
+**Bilinen sınırlamalar:**
+- OCR onay ekranında sadece metin düzenlenebiliyor; görselin kendisi (örn. döndürme/kırpma) düzenlenemiyor.
+- `/analytics` ve `/test` sayfalarında `company_id` sabit kodlanmış (bkz. Faz 6 sınırlamaları altındaki "Kimlik doğrulama hiç yok" notu).
+
+**Faz 7 tamamlandı.**
 
 ---
 
@@ -440,7 +465,7 @@ git commit -m "Faz X.Y: ..."
 **Tamamlanan:** Faz 0, Faz 1, Faz 2 (tüm alt adımlarıyla).
 **Sırada:** Faz 3 — FastAPI + Senkron Ingestion Akışı (`POST /documents/upload`, `POST /documents/{id}/approve` endpoint'leri).
 
-**Tamamlanan:** Faz 0, Faz 1, Faz 2, Faz 3, Faz 4, Faz 5, Faz 6 (tamamı) + geliştirme ortamı süreç yönetimi (Honcho/tmux, aktif görev kontrolü) + Faz 7.1-7.5 (Next.js iskeleti, Tailwind+shadcn, CORS, OCR onay ekranı [görsel+metin düzenleme dahil], `/test` senaryo simülasyon paneli — `test_emails.json` ile 22 senaryo).
-**Sırada:** Faz 7.6 — Belge Yönetimi (genel görünüm, tüm durumlar).
+**Tamamlanan:** Faz 0, Faz 1, Faz 2, Faz 3, Faz 4, Faz 5, Faz 6 (tamamı), Faz 7 (tamamı — Next.js paneli: OCR onay, `/test` simülasyon, belge yönetimi, analitik) + geliştirme ortamı süreç yönetimi (Honcho/tmux, aktif görev kontrolü).
+**Sırada:** Faz 8 — Multi-Tenant Sıkılaştırma + Cila (ikinci demo şirket ile izolasyon testi, PostgreSQL RLS, hata yönetimi/loglama, README).
 
 Yeni bir sohbette kaldığımız yerden devam edilecekse: bu dosya (`Gelistirme_Plani.md`) ve `Proje_Dokumantasyonu.md` yeterlidir — ikisi birlikte projenin tüm mimari gerekçelerini, alınan kararları ve şu ana kadarki ilerlemeyi kapsar.
