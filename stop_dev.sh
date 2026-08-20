@@ -62,7 +62,7 @@ if tmux has-session -t "$SESSION" 2>/dev/null; then
   tmux send-keys -t "$SESSION:0.0" C-c
 
   echo "[*] Servislerin düzgün kapanması bekleniyor..."
-  sleep 5
+  sleep 15
 
 
   # --------------------------------------------------------

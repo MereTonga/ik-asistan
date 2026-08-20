@@ -38,7 +38,7 @@ wait_for() {
       return 1
     fi
 
-    echo -n "."
+    echo -n " "
     sleep 1
     elapsed=$((elapsed + 1))
 
@@ -188,7 +188,7 @@ if ! tmux has-session -t "$SESSION" 2>/dev/null; then
 
   tmux send-keys \
     -t "$TERMINAL_PANE" \
-    "clear; echo '================================'; echo '🖥️  Ubuntu Terminal'; echo '================================'; echo ''; echo '📁 $PROJECT_DIR'; echo ''" \
+    "clear; echo '================================'; echo '🖥️  Ubuntu Terminal'; echo '================================'; echo ''; echo 'FastAPI link: http://localhost:8000'; echo 'Next.js link: http://localhost:5300'; echo '';echo ''" \
     C-m
 
 
