@@ -32,3 +32,37 @@ def test_approve_document_task_creates_chunks(monkeypatch, db_session, test_sess
         .all()
     )
     assert len(chunks) == 2
+
+def test_process_uploaded_document_task_updates_document(monkeypatch, db_session, test_session_factory, test_company):
+    import app.tasks.document_tasks as document_tasks_module
+    from app.models import Document
+
+    monkeypatch.setattr(document_tasks_module, "SessionLocal", test_session_factory)
+    monkeypatch.setattr(
+        document_tasks_module,
+        "process_document",
+        lambda file_path, quality: {
+            "source_type": "ocr_clean",
+            "extracted_text": "Sahte OCR çıktısı burada.",
+        },
+    )
+
+    doc = Document(
+        company_id=test_company.id,
+        original_filename="test.jpg",
+        source_type="pending",
+        status="pending_approval",
+        raw_extracted_text=None,
+    )
+    db_session.add(doc)
+    db_session.flush()
+
+    result = document_tasks_module.process_uploaded_document_task(
+        str(doc.id), "/sahte/yol/test.jpg", "clean"
+    )
+
+    assert result["status"] == "processed"
+
+    db_session.refresh(doc)
+    assert doc.source_type == "ocr_clean"
+    assert doc.raw_extracted_text == "Sahte OCR çıktısı burada."
