@@ -2,6 +2,7 @@ import os
 import redis
 from app.celery_app import celery_app
 from app.db.session import SessionLocal
+from app.logging_config import get_logger
 from app.models import Message
 from app.email_service.reader import fetch_unseen_emails
 from app.email_service.sender import send_reply
@@ -16,6 +17,8 @@ from app.rag.graph import build_rag_graph
 redis_client = redis.from_url(os.getenv("REDIS_URL"))
 EMAIL_CHECK_LOCK_KEY = "email_check_lock"
 EMAIL_CHECK_LOCK_TTL = 300
+
+logger = get_logger(__name__)
 
 def process_single_email(email_data: dict, db, company_override=None) -> dict:
     """
@@ -90,6 +93,7 @@ def check_new_emails_task():
     """
     lock_acquired = redis_client.set(EMAIL_CHECK_LOCK_KEY, "1", nx=True, ex=EMAIL_CHECK_LOCK_TTL)
     if not lock_acquired:
+        logger.info("Önceki çalıştırma hâlâ devam ediyor")
         return {"skipped_run": True, "reason": "Önceki çalıştırma hâlâ devam ediyor"}
 
     db = SessionLocal()
@@ -108,7 +112,10 @@ def check_new_emails_task():
                     skipped_count += 1
             except Exception as e:
                 db.rollback()
-                print(f"Mail işlenirken hata oluştu (message_id={email_data.get('message_id')}): {e}")
+                logger.error(
+                    f"Mail işlenirken hata oluştu (message_id={email_data.get('message_id')}): {e}",
+                    exc_info=True,
+                )
                 skipped_count += 1
                 continue
 
