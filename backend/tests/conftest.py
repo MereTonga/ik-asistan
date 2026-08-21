@@ -16,26 +16,46 @@ TestSessionLocal = sessionmaker(bind=engine)
 
 
 @pytest.fixture
-def db_session():
+def db_connection():
     """
-    Her test için temiz bir veritabanı oturumu sağlar.
-    Test bitince (başarılı ya da başarısız fark etmez) yapılan
-    tüm değişiklikler geri alınır - veritabanı hep temiz kalır.
+    Testin süresince açık kalan tek bir veritabanı bağlantısı + transaction.
+    Bu bağlantıya bağlanan her session (db_session da, Celery task'ların
+    içindeki monkeypatch'lenmiş SessionLocal'lar da) aynı transaction'ı
+    paylaşır - hiçbiri gerçekten commit etmez, hepsi testin sonunda tek
+    seferde rollback edilir.
     """
     connection = engine.connect()
     transaction = connection.begin()
-    session = TestSessionLocal(bind=connection)
 
-    yield session
+    yield connection
 
-    session.close()
     transaction.rollback()
     connection.close()
 
 
 @pytest.fixture
+def db_session(db_connection):
+    """Her test için, paylaşılan bağlantıya bağlı bir veritabanı oturumu."""
+    session = TestSessionLocal(bind=db_connection)
+    yield session
+    session.close()
+
+
+@pytest.fixture
+def test_session_factory(db_connection):
+    """
+    SessionLocal'a benzer davranan bir fabrika - her çağrıldığında YENİ bir
+    session döner, ama hepsi aynı paylaşılan bağlantıya bağlıdır. Celery
+    task'ların içindeki gerçek SessionLocal'ı bununla değiştirmek
+    (monkeypatch) için kullanılır.
+    """
+    def factory():
+        return TestSessionLocal(bind=db_connection)
+    return factory
+
+
+@pytest.fixture
 def test_company(db_session):
-    """Testlerde kullanılacak, otomatik oluşturulan bir şirket kaydı."""
     from app.models import Company
 
     company = Company(
@@ -43,8 +63,9 @@ def test_company(db_session):
         email_domain="testcompany.com",
     )
     db_session.add(company)
-    db_session.flush()  # id'yi almak için, henüz commit etmeden
+    db_session.flush()
     return company
+
 
 @pytest.fixture
 def client(db_session):
