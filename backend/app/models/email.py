@@ -1,5 +1,5 @@
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 from sqlalchemy import Column, String, DateTime, ForeignKey, Text, Boolean
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
@@ -20,7 +20,7 @@ class EmailThread(Base):
     root_message_id_header = Column(String, nullable=True, unique=True)
 
     status = Column(String, nullable=False, default="open")  # 'open' | 'escalated' | 'resolved'
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default= lambda: datetime.now(timezone.utc))
 
     messages = relationship("Message", back_populates="thread", cascade="all, delete-orphan")
 
@@ -44,7 +44,7 @@ class Message(Base):
     was_escalated = Column(Boolean, default=False)
     confidence_score = Column(String, nullable=True)  # basit tutuyoruz, ölçüm birimi netleşince değişebilir
 
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
     thread = relationship("EmailThread", back_populates="messages")
 

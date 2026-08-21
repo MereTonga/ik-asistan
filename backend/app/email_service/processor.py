@@ -1,5 +1,5 @@
 import re
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from sqlalchemy.orm import Session
 from sqlalchemy import func
 
@@ -45,7 +45,7 @@ def find_or_create_thread(email_data: dict, company_id: str, db: Session) -> tup
 
     # Katman 2: Sezgisel eşleştirme
     normalized_subject = _normalize_subject(email_data["subject"])
-    reopen_window = datetime.utcnow() - timedelta(days=30)  # Faz 2'de konuştuğumuz pencere
+    reopen_window = datetime.now(timezone.utc) - timedelta(days=30)  # Faz 2'de konuştuğumuz pencere
 
     candidates = db.query(EmailThread).filter(
         EmailThread.employee_email == email_data["from_address"],
