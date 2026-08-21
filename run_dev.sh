@@ -197,7 +197,7 @@ if ! tmux has-session -t "$SESSION" 2>/dev/null; then
   # --------------------------------------------------------
 
   # Mouse desteği
-  tmux set-option -t "$SESSION" mouse on
+  # tmux set-option -t "$SESSION" mouse on
 
   # Panel başlıklarını göster
   tmux set-option -t "$SESSION" pane-border-status top
