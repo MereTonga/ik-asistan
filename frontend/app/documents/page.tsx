@@ -42,7 +42,12 @@ export default function DocumentsPage() {
 
   return (
     <div className="min-h-screen bg-slate-100 p-8">
-      <h1 className="mb-6 text-2xl font-bold">Belge Yönetimi</h1>
+      <div className="mb-6 flex items-center justify-between">
+        <h1 className="text-2xl font-bold">Belge Yönetimi</h1>
+        <Link href="/documents/upload">
+          <Button>+ Yeni Belge Yükle</Button>
+        </Link>
+      </div>
 
       <div className="mb-6 flex gap-2">
         {FILTERS.map((f) => (
