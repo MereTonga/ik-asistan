@@ -1,3 +1,4 @@
+from app.config import settings  # noqa: F401 - .env doğrulamasını başlangıçta tetiklemek için
 import os
 from celery import Celery
 from dotenv import load_dotenv
