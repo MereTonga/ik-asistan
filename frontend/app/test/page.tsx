@@ -24,11 +24,17 @@ export default function TestPanel() {
   const [scenarios, setScenarios] = useState<Scenario[]>([]);
   const [results, setResults] = useState<Record<number, SimulationResult>>({});
   const [loadingIndex, setLoadingIndex] = useState<number | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
+    setError(null);
     fetch("http://localhost:8000/test/scenarios")
-      .then((res) => res.json())
-      .then((data) => setScenarios(data));
+      .then((res) => {
+        if (!res.ok) throw new Error("Senaryolar yüklenemedi");
+        return res.json();
+      })
+      .then((data) => setScenarios(data))
+      .catch(() => setError("Backend'e bağlanılamadı. Sunucunun çalıştığından emin olun."));
   }, []);
 
   const handleSimulate = async (index: number) => {
@@ -42,10 +48,16 @@ export default function TestPanel() {
     setLoadingIndex(null);
   };
 
+  
+
   return (
     <div className="min-h-screen bg-slate-100 p-8">
       <h1 className="mb-6 text-2xl font-bold">Test Paneli — Senaryo Simülasyonu</h1>
-
+      {error && (
+        <div className="mb-4 rounded border border-red-200 bg-red-50 p-3 text-sm text-red-600">
+          {error}
+        </div>
+      )}
       <div className="flex flex-col gap-4">
         {scenarios.map((scenario, index) => {
           const result = results[index];

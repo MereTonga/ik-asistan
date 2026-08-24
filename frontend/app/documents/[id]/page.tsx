@@ -25,14 +25,20 @@ export default function DocumentDetailPage() {
   const [approving, setApproving] = useState(false);
   const [editedText, setEditedText] = useState("");
   const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
+    setError(null);
     fetch(`http://localhost:8000/documents/${id}`)
-      .then((res) => res.json())
+      .then((res) => {
+        if (!res.ok) throw new Error("Belge bulunamadı");
+        return res.json();
+      })
       .then((data) => {
         setDoc(data);
         setEditedText(data.raw_extracted_text);
-      });
+      })
+      .catch(() => setError("Belge yüklenemedi. Backend'e bağlanılamadı ya da belge bulunamadı."));
   }, [id]);
 
   const handleSave = async () => {
@@ -52,6 +58,16 @@ export default function DocumentDetailPage() {
     });
     router.push("/documents");
   };
+
+  if (error) {
+    return (
+      <div className="p-8">
+        <div className="rounded border border-red-200 bg-red-50 p-3 text-sm text-red-600">
+          {error}
+        </div>
+      </div>
+    );
+  }
 
   if (!doc) {
     return <div className="p-8">Yükleniyor...</div>;

@@ -16,7 +16,9 @@ export function Navbar() {
   return (
     <nav className="border-b border-slate-200 bg-white px-8 py-4">
       <div className="flex items-center gap-6">
-        <span className="font-bold">İK Asistanı</span>
+        <Link href="/" className="font-bold">
+          İK Asistanı
+        </Link>
         {NAV_ITEMS.map((item) => {
           const isActive =
             item.href === "/" ? pathname === "/" : pathname.startsWith(item.href);

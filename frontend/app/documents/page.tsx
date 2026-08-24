@@ -29,15 +29,21 @@ function statusBadgeVariant(status: string) {
 export default function DocumentsPage() {
   const [documents, setDocuments] = useState<DocumentSummary[]>([]);
   const [activeFilter, setActiveFilter] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
+    setError(null);
     const url = activeFilter
       ? `http://localhost:8000/documents?status=${activeFilter}`
       : "http://localhost:8000/documents";
 
     fetch(url)
-      .then((res) => res.json())
-      .then((data) => setDocuments(data));
+      .then((res) => {
+        if (!res.ok) throw new Error("Belgeler yüklenemedi");
+        return res.json();
+      })
+      .then((data) => setDocuments(data))
+      .catch(() => setError("Backend'e bağlanılamadı. Sunucunun çalıştığından emin olun."));
   }, [activeFilter]);
 
   return (
@@ -60,6 +66,12 @@ export default function DocumentsPage() {
           </Button>
         ))}
       </div>
+
+      {error && (
+        <div className="mb-4 rounded border border-red-200 bg-red-50 p-3 text-sm text-red-600">
+          {error}
+        </div>
+      )}
 
       {documents.length === 0 && (
         <p className="text-slate-500">Bu filtrede belge yok.</p>

@@ -20,12 +20,28 @@ const TEST_COMPANY_ID = "4d3ef371-7d0e-4111-91d0-aa8ffe7e0188";
 
 export default function AnalyticsPage() {
   const [summary, setSummary] = useState<Summary | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
+    setError(null);
     fetch(`http://localhost:8000/analytics/summary?company_id=${TEST_COMPANY_ID}`)
-      .then((res) => res.json())
-      .then((data) => setSummary(data));
+      .then((res) => {
+        if (!res.ok) throw new Error("Analitik verisi yüklenemedi");
+        return res.json();
+      })
+      .then((data) => setSummary(data))
+      .catch(() => setError("Backend'e bağlanılamadı. Sunucunun çalıştığından emin olun."));
   }, []);
+
+  if (error) {
+    return (
+      <div className="p-8">
+        <div className="rounded border border-red-200 bg-red-50 p-3 text-sm text-red-600">
+          {error}
+        </div>
+      </div>
+    );
+  }
 
   if (!summary) {
     return <div className="p-8">Yükleniyor...</div>;
