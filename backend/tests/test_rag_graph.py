@@ -52,3 +52,57 @@ def test_generate_answer_node_uses_only_confident_chunks(mock_client):
     system_message = call_args.kwargs["messages"][0]["content"]
     assert "Eşik üstü chunk" in system_message
     assert "Eşik altı chunk" not in system_message
+
+def test_groundedness_check_skips_llm_when_disabled(monkeypatch):
+    import app.rag.graph as graph_module
+
+    monkeypatch.setattr(graph_module, "GROUNDEDNESS_CHECK_ENABLED", False)
+
+    state = {"retrieved_chunks": [], "answer": "herhangi bir cevap"}
+    result = graph_module.groundedness_check_node(state)
+
+    assert result["is_grounded"] is True
+
+
+@patch("app.rag.graph.client")
+def test_groundedness_check_parses_evet_as_grounded(mock_client, monkeypatch):
+    import app.rag.graph as graph_module
+
+    monkeypatch.setattr(graph_module, "GROUNDEDNESS_CHECK_ENABLED", True)
+    mock_client.chat.return_value = {"message": {"content": "EVET"}}
+
+    state = {
+        "retrieved_chunks": [{"chunk_text": "İzin hakkı 1 yıl sonra başlar.", "is_confident": True}],
+        "answer": "İzin hakkınız 1 yıl sonra başlar.",
+    }
+    result = graph_module.groundedness_check_node(state)
+
+    assert result["is_grounded"] is True
+
+
+@patch("app.rag.graph.client")
+def test_groundedness_check_parses_hayir_as_not_grounded(mock_client, monkeypatch):
+    import app.rag.graph as graph_module
+
+    monkeypatch.setattr(graph_module, "GROUNDEDNESS_CHECK_ENABLED", True)
+    mock_client.chat.return_value = {"message": {"content": "HAYIR"}}
+
+    state = {
+        "retrieved_chunks": [{"chunk_text": "İzin hakkı 1 yıl sonra başlar.", "is_confident": True}],
+        "answer": "İzin hakkınız 6 ay sonra başlar ve 30 gündür.",
+    }
+    result = graph_module.groundedness_check_node(state)
+
+    assert result["is_grounded"] is False
+
+
+def test_route_after_groundedness_check_grounded():
+    from app.rag.graph import route_after_groundedness_check
+
+    assert route_after_groundedness_check({"is_grounded": True}) == "grounded"
+
+
+def test_route_after_groundedness_check_not_grounded():
+    from app.rag.graph import route_after_groundedness_check
+
+    assert route_after_groundedness_check({"is_grounded": False}) == "not_grounded"

@@ -14,6 +14,20 @@ OLLAMA_HOST = os.getenv("OLLAMA_BASE_URL")
 
 client = ollama.Client(host=OLLAMA_HOST)
 
+GROUNDEDNESS_CHECK_ENABLED = os.getenv("GROUNDEDNESS_CHECK_ENABLED", "true").lower() == "true"
+
+GROUNDEDNESS_PROMPT = """Sen bir doğrulama uzmanısın. Aşağıda bir KAYNAK METİN ve bu metne dayanarak üretilmiş bir CEVAP var.
+Görevin: CEVAP'ın TAMAMEN KAYNAK METİN'de yer alan bilgilere dayanıp dayanmadığını kontrol etmek.
+
+KAYNAK METİN:
+{context}
+
+CEVAP:
+{answer}
+
+Eğer CEVAP'taki her bilgi KAYNAK METİN'de açıkça yer alıyorsa "EVET" yaz.
+Eğer CEVAP, kaynakta olmayan bir bilgi içeriyorsa (uydurulmuş, çıkarım yapılmış ya da eklenmiş) "HAYIR" yaz.
+SADECE "EVET" ya da "HAYIR" yaz, başka hiçbir şey yazma."""
 
 # 1) STATE TANIMI — akış boyunca taşınacak veri paketi
 class RAGState(TypedDict):
@@ -23,6 +37,7 @@ class RAGState(TypedDict):
     has_confident_match: bool    # eşik üstünde en az bir chunk var mı
     answer: str                  # üretilen cevap veya yönlendirme mesajı
     was_escalated: bool          # insana yönlendirildi mi
+    is_grounded: bool            # üretilen cevap dokümanla destekleniyor mu (grounded)
 
 
 # 2) NODE'LAR — her biri State alır, güncellenmiş State döner
@@ -66,11 +81,32 @@ def escalate_node(state: RAGState) -> RAGState:
     message = "Bu konuda elimde net bir bilgi yok, talebinizi İK ekibimize ilettim."
     return {**state, "answer": message, "was_escalated": True}
 
+def groundedness_check_node(state: RAGState) -> RAGState:
+    if not GROUNDEDNESS_CHECK_ENABLED:
+        return {**state, "is_grounded": True}
+
+    confident_chunks = [c for c in state["retrieved_chunks"] if c["is_confident"]]
+    context_text = "\n\n".join(c["chunk_text"] for c in confident_chunks)
+
+    prompt = GROUNDEDNESS_PROMPT.format(context=context_text, answer=state["answer"])
+
+    response = client.chat(
+        model=LLM_MODEL,
+        messages=[{"role": "user", "content": prompt}],
+        options={"num_ctx": CONTEXT_SIZE},
+    )
+
+    verdict = response["message"]["content"].strip().upper()
+    is_grounded = verdict.startswith("EVET")
+
+    return {**state, "is_grounded": is_grounded}
 
 # 3) KOŞULLU YÖNLENDİRME — search_node'dan sonra hangi node'a gidileceğine karar verir
 def route_after_search(state: RAGState) -> str:
     return "generate_answer" if state["has_confident_match"] else "escalate"
 
+def route_after_groundedness_check(state: RAGState) -> str:
+    return "grounded" if state["is_grounded"] else "not_grounded"
 
 # 4) GRAPH'I İNŞA ET
 def build_rag_graph():
@@ -78,8 +114,8 @@ def build_rag_graph():
 
     graph.add_node("search", search_node)
     graph.add_node("generate_answer", generate_answer_node)
+    graph.add_node("groundedness_check", groundedness_check_node)
     graph.add_node("escalate", escalate_node)
-
     graph.set_entry_point("search")
 
     graph.add_conditional_edges(
@@ -91,7 +127,17 @@ def build_rag_graph():
         },
     )
 
-    graph.add_edge("generate_answer", END)
+    graph.add_edge("generate_answer", "groundedness_check")
+
+    graph.add_conditional_edges(
+        "groundedness_check",
+        route_after_groundedness_check,
+        {
+            "grounded": END,
+            "not_grounded": "escalate",
+        },
+    )
+
     graph.add_edge("escalate", END)
 
     return graph.compile()
