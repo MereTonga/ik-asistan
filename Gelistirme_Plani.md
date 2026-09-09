@@ -96,7 +96,11 @@ bash stop_dev.sh          # aktif görev kontrolü + durdur + doğrula
 | 6 | E-posta Entegrasyonu (IMAP/SMTP) | ✅ Tamamlandı |
 | 7 | Next.js Paneli + UI Cilası | ✅ Tamamlandı |
 | 8 | Test + Loglama + Config Doğrulama | ✅ Tamamlandı |
+| — | Groundedness Check (RAG kalite) | ✅ Tamamlandı |
 | 9 | Multi-Tenant Sıkılaştırma + Cila | ⏳ Sırada |
+| — | `requirements.txt` + CI/CD (GitHub Actions) | Planlandı |
+| — | Docker (uygulamanın kendisini container'lama) | Planlandı |
+| — | Genel değerlendirme (tüm `.md` dosyalarının son güncellemesi) | Planlandı |
 
 ---
 
@@ -278,6 +282,27 @@ bash stop_dev.sh          # aktif görev kontrolü + durdur + doğrula
 
 ---
 
+## Groundedness Check (RAG Kalite İyileştirmesi)
+
+**Motivasyon:** Faz 4'te kurduğumuz güven eşiği (`RAG_CONFIDENCE_THRESHOLD`), sadece "alakalı chunk bulundu mu" sorusuna cevap veriyor — üretilen cevabın **gerçekten** o chunk'ın içeriğiyle tutarlı olduğunu garanti etmiyor. Bu, en başından beri ("reranker/groundedness check yok" maddesi) bilinen bir sınırlamaydı.
+
+**Uygulanan çözüm (ek model/altyapı olmadan):** `app/rag/graph.py`'ye yeni bir node — `groundedness_check_node`. `generate_answer_node`'un ürettiği cevap, doğrudan kullanıcıya gitmeden önce, **aynı LLM'e ikinci bir çağrıyla** ("bu cevap kaynak metinde gerçekten var mı? EVET/HAYIR") sorgulanıyor. `HAYIR` cevabı gelirse, akış **mevcut `escalate_node`'a** yönlendiriliyor (kod tekrarı yok). `.env`: `GROUNDEDNESS_CHECK_ENABLED` ile açılıp kapatılabiliyor.
+
+**Yeni akış:**
+```
+search → (eşik üstü mü?) → generate_answer → groundedness_check → (destekleniyor mu?) → EVET → END
+                                                                                        → HAYIR → escalate → END
+                          → escalate → END
+```
+
+**Bulunan/doğrulanan davranış:** Celery worker, kod değişikliklerini otomatik yenilemiyor (bkz. Genel Kurallar #9) — groundedness node'u eklendikten sonra worker yeniden başlatılmadan test edilince, eski kod çalışmaya devam etmiş ve tek `api/chat` çağrısı görülmüştü. Sistem yeniden başlatılınca iki ayrı `api/chat` çağrısı (cevap üretimi + groundedness kontrolü) doğrulandı.
+
+**Testler:** 5 yeni test (`GROUNDEDNESS_CHECK_ENABLED=false` iken LLM'e hiç gidilmediği, `EVET`/`HAYIR` yanıtlarının doğru parse edildiği, yönlendirme fonksiyonu) — toplam test sayısı 32'ye çıktı.
+
+**Maliyet notu:** Her `generate_answer` çağrısı artık **iki katına** çıkıyor (asıl cevap + doğrulama) — `escalate` yoluna hiç etkisi yok, çünkü o yol zaten LLM çağırmıyor.
+
+---
+
 ## FAZ 9 — Multi-Tenant Sıkılaştırma + Cila (Sırada)
 
 **Yapılacaklar (orijinal plan, henüz başlanmadı):**
@@ -298,7 +323,7 @@ Proje boyunca bulunan, bilinçli olarak MVP kapsamı dışında bırakılan nokt
 4. "Her gelen mail bir İK sorusudur" varsayımı — niyet sınıflandırması yok.
 5. Alıntı temizleme (%100 kapsayıcı değil), `References` başlığı birikimli değil.
 6. Sadece Gmail/App Password test edildi; OAuth2, Outlook/Exchange kurumsal IMAP denenmedi.
-7. Reranker/groundedness kontrolü yok — cosine similarity tek başına "doğru cevap" garantisi vermiyor.
+7. Gerçek bir reranker modeli yok — sadece groundedness check (aynı LLM ile ikinci doğrulama) eklendi; cross-encoder tabanlı ayrı bir reranker, ek VRAM maliyeti nedeniyle bilinçli olarak eklenmedi.
 8. KVKK/veri saklama-silme politikası uygulanmadı.
 9. RLS henüz yok — sadece uygulama seviyesi (`WHERE company_id=`) filtreleme.
 10. OCR onay ekranında sadece metin düzenlenebiliyor, görsel değil.
@@ -317,6 +342,7 @@ Proje boyunca bulunan, bilinçli olarak MVP kapsamı dışında bırakılan nokt
 6. Yeni bir Celery task dosyası eklendiğinde `celery_app.py`'deki `include=[...]` listesine eklenmeli (aksi halde worker task'ı görmez — Faz 5'te yaşanan hata).
 7. Yeni kod yazıldığında, mümkünse aynı PR/adımda bir test de eklenmeli (Faz 8'den itibaren kurulu standart).
 8. `datetime.now(timezone.utc)` kullanılmalı, `datetime.utcnow()` değil (deprecated, Faz 8.3'te düzeltildi).
+9. **Celery worker, kod değişikliklerini otomatik yenilemez.** `uvicorn --reload` sadece FastAPI/web sürecini kapsar — `app/rag/`, `app/tasks/`, `app/email_service/` gibi worker tarafından kullanılan dosyalarda değişiklik yapıldığında, worker'ın belleğindeki eski kodu değil yeni kodu kullanması için sistem yeniden başlatılmalı (`stop_dev.sh` + `run_dev.sh`).
 
 ## Git Commit Alışkanlığı
 
@@ -332,7 +358,9 @@ git commit -m "Faz X.Y: ..."
 
 ## Şu Anki Durum / Devam Noktası
 
-**Tamamlanan:** Faz 0-8 (tamamı).
-**Sırada:** Faz 9 — Multi-Tenant Sıkılaştırma + Cila (ikinci demo şirket, RLS, README).
+**Tamamlanan:** Faz 0-8 (tamamı) + Groundedness Check.
+**Sırada:** Faz 9 — Multi-Tenant Sıkılaştırma + Cila (ikinci demo şirket, RLS, hata yönetimi, README).
+**Sonraki planlanan adımlar (kararlaştırılmış sıra):** Faz 9 → `requirements.txt` + CI/CD (GitHub Actions) → Docker (uygulamanın kendisini container'lama) → Genel değerlendirme (tüm `.md` dosyalarının son güncellemesi).
+**Kapsam dışı bırakılan (bilinçli karar):** Kimlik doğrulama (authentication) ve gerçek bir sunucuya deploy — ikisi de projenin mevcut karmaşıklığına (çok süreçli mimari, GPU bağımlılığı, kişisel e-posta hesabı) göre ayrı, daha sade projelerde öğrenilmesi daha sağlıklı bulunan konular olarak not edildi.
 
 Yeni bir sohbette kaldığımız yerden devam edilecekse: bu dosya (`Gelistirme_Plani.md`) ve `Proje_Dokumantasyonu.md` yeterlidir.
