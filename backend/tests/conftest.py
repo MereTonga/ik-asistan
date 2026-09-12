@@ -82,3 +82,16 @@ def client(db_session):
         yield test_client
 
     app.dependency_overrides.clear()
+    
+@pytest.fixture
+def test_company_b(db_session):
+    """İzolasyon testleri için ikinci, bağımsız bir şirket."""
+    from app.models import Company
+
+    company = Company(
+        name="B Şirketi Test",
+        email_domain="bsirketitest.com",
+    )
+    db_session.add(company)
+    db_session.flush()
+    return company
