@@ -8,6 +8,10 @@ load_dotenv(dotenv_path=os.path.join(os.path.dirname(__file__), "../../../.env")
 from langgraph.graph import StateGraph, END
 from app.rag.retrieval import search_relevant_chunks
 
+from app.logging_config import get_logger
+
+logger = get_logger(__name__)
+
 LLM_MODEL = os.getenv("LLM_MODEL")
 CONTEXT_SIZE = int(os.getenv("CONTEXT_SIZE", 4096))
 OLLAMA_HOST = os.getenv("OLLAMA_BASE_URL")
@@ -17,7 +21,7 @@ client = ollama.Client(host=OLLAMA_HOST)
 GROUNDEDNESS_CHECK_ENABLED = os.getenv("GROUNDEDNESS_CHECK_ENABLED", "true").lower() == "true"
 
 GROUNDEDNESS_PROMPT = """Sen bir doğrulama uzmanısın. Aşağıda bir KAYNAK METİN ve bu metne dayanarak üretilmiş bir CEVAP var.
-Görevin: CEVAP'ın TAMAMEN KAYNAK METİN'de yer alan bilgilere dayanıp dayanmadığını kontrol etmek.
+Görevin: CEVAP'ta, KAYNAK METİN'de YER ALMAYAN somut, yanlış ya da uydurulmuş bir BİLGİ olup olmadığını kontrol etmek.
 
 KAYNAK METİN:
 {context}
@@ -25,8 +29,13 @@ KAYNAK METİN:
 CEVAP:
 {answer}
 
-Eğer CEVAP'taki her bilgi KAYNAK METİN'de açıkça yer alıyorsa "EVET" yaz.
-Eğer CEVAP, kaynakta olmayan bir bilgi içeriyorsa (uydurulmuş, çıkarım yapılmış ya da eklenmiş) "HAYIR" yaz.
+ÖNEMLİ KURALLAR:
+- CEVAP'ın "bu konuda kaynakta bilgi yok" ya da benzer şekilde DÜRÜSTÇE bir bilgi eksikliğini belirtmesi İHLAL DEĞİLDİR - bu doğru bir davranıştır, EVET say.
+- Genel nezaket ifadeleri (selamlama, "yardımcı olmak isterim" gibi) İHLAL DEĞİLDİR, dikkate alma.
+- Sadece KAYNAK METİN'le ÇELİŞEN ya da kaynakta hiç geçmeyen bir SAYI/KURAL/İDDİA varsa bunu ihlal say.
+
+Eğer CEVAP bu kurallara göre kaynakla tutarlıysa "EVET" yaz.
+Eğer CEVAP, kaynakla çelişen ya da kaynakta hiç olmayan somut bir bilgi/sayı/kural içeriyorsa "HAYIR" yaz.
 SADECE "EVET" ya da "HAYIR" yaz, başka hiçbir şey yazma."""
 
 # 1) STATE TANIMI — akış boyunca taşınacak veri paketi
@@ -50,6 +59,7 @@ def search_node(state: RAGState) -> RAGState:
     finally:
         db.close()
     has_confident = any(c["is_confident"] for c in chunks)
+    logger.info(f"search_node: has_confident_match={has_confident}, chunk_count={len(chunks)}")
     return {**state, "retrieved_chunks": chunks, "has_confident_match": has_confident}
 
 
@@ -72,13 +82,15 @@ DOKÜMAN:
             {"role": "user", "content": state["question"]},
         ],
         options={"num_ctx": CONTEXT_SIZE},
+        think=False,
     )
-
+    logger.info(f"generate_answer_node: cevap üretildi -> '{response['message']['content']}...'")
     return {**state, "answer": response["message"]["content"], "was_escalated": False}
 
 
 def escalate_node(state: RAGState) -> RAGState:
     message = "Bu konuda elimde net bir bilgi yok, talebinizi İK ekibimize ilettim."
+    logger.info("escalate_node: yönlendirme yapılıyor")
     return {**state, "answer": message, "was_escalated": True}
 
 def groundedness_check_node(state: RAGState) -> RAGState:
@@ -93,12 +105,13 @@ def groundedness_check_node(state: RAGState) -> RAGState:
     response = client.chat(
         model=LLM_MODEL,
         messages=[{"role": "user", "content": prompt}],
-        options={"num_ctx": CONTEXT_SIZE},
+        options={"num_ctx": CONTEXT_SIZE, "temperature": 0},
+        think=False,
     )
 
     verdict = response["message"]["content"].strip().upper()
     is_grounded = verdict.startswith("EVET")
-
+    logger.info(f"groundedness_check_node: verdict={verdict}, is_grounded={is_grounded}")
     return {**state, "is_grounded": is_grounded}
 
 # 3) KOŞULLU YÖNLENDİRME — search_node'dan sonra hangi node'a gidileceğine karar verir
