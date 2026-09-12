@@ -297,6 +297,12 @@ search → (eşik üstü mü?) → generate_answer → groundedness_check → (d
 
 **Bulunan/doğrulanan davranış:** Celery worker, kod değişikliklerini otomatik yenilemiyor (bkz. Genel Kurallar #9) — groundedness node'u eklendikten sonra worker yeniden başlatılmadan test edilince, eski kod çalışmaya devam etmiş ve tek `api/chat` çağrısı görülmüştü. Sistem yeniden başlatılınca iki ayrı `api/chat` çağrısı (cevap üretimi + groundedness kontrolü) doğrulandı.
 
+**Kritik bulgu — "thinking" modu boş cevaba yol açıyordu (Faz 1'den beri var olan, gizli bir sorun):** İkinci demo şirketle (Faz 9.1) test edilirken, hem `generate_answer_node` hem `groundedness_check_node`'un **boş içerik** (`content=""`) döndürdüğü, akışın her seferinde `escalate`'e düştüğü ve çağrıların 30-95 saniye sürdüğü görüldü. **Kök neden:** `qwen3.5:9b`, Ollama'da varsayılan olarak "thinking" modunda çalışıyor — cevabı üretmeden önce görünmez bir `<think>...</think>` bloğu içinde muhakeme yürütüyor, bu da **`num_ctx` bütçesinden pay alıyor.** `num_ctx=4096`'ya (Faz 1'de VRAM optimizasyonu için) düşürülmüş olması, art arda iki çağrıda (özellikle groundedness gibi kendi başına muhakeme gerektiren bir soruda) düşünme sürecinin **bütçenin tamamını tüketip** gerçek cevaba hiç yer bırakmamasına yol açabiliyordu. Bu, Faz 1 ve Faz 6'da gözlemlenen ama o zaman kaynağı bilinmeyen ara sıra boş cevap / garip karakter sızıntısı olaylarını da açıklıyor.
+
+**Çözüm:** Ollama'nın `client.chat(...)` çağrısına `think=False` parametresi eklendi (hem `generate_answer_node` hem `groundedness_check_node`'da) — model düşünme adımını atlayıp doğrudan cevap üretiyor. Sonuç: çağrı süreleri 30-95 saniyeden **4-6 saniyeye** düştü, boş cevap sorunu ortadan kalktı. **Genel kural olarak kaydedildi** (bkz. Genel Kurallar): Qwen3 ailesi modellerle yapılan her `chat()` çağrısında `think=False` açıkça belirtilmeli.
+
+**İkinci bulgu — groundedness check'in yanlış negatif (false negative) vermesi:** `think=False` sonrası, dokümanda kısmen bilgi olan bir soruda ("25 gün" bilgisi var, "tek seferde kullanım" bilgisi yok), model **dürüstçe** "bu konuda bilgi yok" diyen iyi bir cevap üretti — ama groundedness check bunu `HAYIR` olarak işaretleyip escalate'e yönlendirdi. **Kök neden (iki parça):** (1) Prompt, "kaynakta birebir yer almayan her şeyi" ihlal sayacak şekilde katıydı — modelin dürüst "bilgi yok" ifadesini de ihlal sanmış olabilir. (2) Çağrıda `temperature` ayarlanmamıştı — güvenlik kritikliği olan bir karar rastgeleliğe açıktı. **Çözüm:** Prompt'a "dürüst bilgi eksikliği beyanı ihlal değildir" kuralı eklendi, `temperature=0` ile karar determinize edildi. **Doğrulama:** Aynı senaryo 5 kez art arda çalıştırılıp 5/5 tutarlı `EVET` (doğru karar) alındı.
+
 **Testler:** 5 yeni test (`GROUNDEDNESS_CHECK_ENABLED=false` iken LLM'e hiç gidilmediği, `EVET`/`HAYIR` yanıtlarının doğru parse edildiği, yönlendirme fonksiyonu) — toplam test sayısı 32'ye çıktı.
 
 **Maliyet notu:** Her `generate_answer` çağrısı artık **iki katına** çıkıyor (asıl cevap + doğrulama) — `escalate` yoluna hiç etkisi yok, çünkü o yol zaten LLM çağırmıyor.
@@ -305,7 +311,13 @@ search → (eşik üstü mü?) → generate_answer → groundedness_check → (d
 
 ## FAZ 9 — Multi-Tenant Sıkılaştırma + Cila (Sırada)
 
-**Yapılacaklar (orijinal plan, henüz başlanmadı):**
+**Test şirketleri:**
+- A Şirketi (orijinal): `4d3ef371-7d0e-4111-91d0-aa8ffe7e0188` — izin politikası (1 yıl sonra hak, 1-5 yıl kıdem→14 gün, 5+ yıl→20 gün).
+- B Şirketi (Faz 9.1'de eklendi): `e5e5fa0d-2b04-4a08-b210-915ad9d85e5f`, doküman ID `4e711598-bf6e-4764-be3b-18f818378655` — bilinçli olarak farklı sayılarla (6 ay sonra hak, kıdeme bakılmaksızın 25 gün, 1 hafta önceden talep) izolasyon testlerinde karışıklığı kolayca fark edebilmek için.
+
+**9.1-9.2 durumu:** İkinci şirket oluşturuldu, manuel izolasyon testi yapıldı — B şirketi sorgusu doğru şekilde **sadece B'nin verisini** kullandı (A'nın hiçbir sayısı karışmadı). Bu süreçte yukarıda anlatılan iki gerçek LLM/groundedness bug'ı bulunup düzeltildi. Otomatik (pytest) izolasyon testi henüz yazılmadı — sırada.
+
+**Kalan yapılacaklar (orijinal plan):**
 - İkinci bir demo şirket eklenip `company_id` izolasyonunun gerçekten test edilmesi.
 - PostgreSQL Row Level Security (RLS) eklenmesi.
 - Genel hata yönetimi gözden geçirmesi.
@@ -343,6 +355,8 @@ Proje boyunca bulunan, bilinçli olarak MVP kapsamı dışında bırakılan nokt
 7. Yeni kod yazıldığında, mümkünse aynı PR/adımda bir test de eklenmeli (Faz 8'den itibaren kurulu standart).
 8. `datetime.now(timezone.utc)` kullanılmalı, `datetime.utcnow()` değil (deprecated, Faz 8.3'te düzeltildi).
 9. **Celery worker, kod değişikliklerini otomatik yenilemez.** `uvicorn --reload` sadece FastAPI/web sürecini kapsar — `app/rag/`, `app/tasks/`, `app/email_service/` gibi worker tarafından kullanılan dosyalarda değişiklik yapıldığında, worker'ın belleğindeki eski kodu değil yeni kodu kullanması için sistem yeniden başlatılmalı (`stop_dev.sh` + `run_dev.sh`).
+10. **Qwen3 ailesi modellerle (`qwen3.5:9b` dahil) yapılan her `client.chat(...)` çağrısında `think=False` açıkça belirtilmeli.** Varsayılan "thinking" modu, `num_ctx` bütçesinden pay alıyor — düşük `num_ctx` (bizde 4096) ile birleşince, özellikle art arda/zincirleme çağrılarda (örn. groundedness check) düşünme süreci tüm bütçeyi tüketip **boş cevaba** yol açabiliyor (Faz 1 ve Faz 6'daki açıklanamayan boş cevap/garip karakter olaylarının kök nedeni bu). `think=False`, hem bu riski ortadan kaldırıyor hem de yanıt süresini ciddi şekilde kısaltıyor (gözlemlenen: 30-95 saniyeden 4-6 saniyeye).
+11. **Güvenlik/karar kritikliği olan LLM çağrılarında (`groundedness_check_node` gibi) `temperature=0` kullanılmalı** — rastgelelik, aynı girdiye farklı kararlar (tutarsız EVET/HAYIR) verilmesine yol açabilir.
 
 ## Git Commit Alışkanlığı
 
