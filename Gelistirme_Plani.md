@@ -97,10 +97,10 @@ bash stop_dev.sh          # aktif görev kontrolü + durdur + doğrula
 | 7 | Next.js Paneli + UI Cilası | ✅ Tamamlandı |
 | 8 | Test + Loglama + Config Doğrulama | ✅ Tamamlandı |
 | — | Groundedness Check (RAG kalite) | ✅ Tamamlandı |
-| 9 | Multi-Tenant Sıkılaştırma + Cila | ⏳ Sırada |
-| — | `requirements.txt` + CI/CD (GitHub Actions) | Planlandı |
+| 9 | Multi-Tenant Sıkılaştırma | ⚠️ Kısmi kapsamla sonlandırıldı (ikinci şirket + izolasyon testleri yapıldı; RLS bilinçli olarak ertelendi) |
+| — | `requirements.txt` + CI/CD (GitHub Actions) | ⏳ Sırada |
 | — | Docker (uygulamanın kendisini container'lama) | Planlandı |
-| — | Genel değerlendirme (tüm `.md` dosyalarının son güncellemesi) | Planlandı |
+| — | Genel değerlendirme + tüm `.md` dosyalarının son güncellemesi (proje kapanışı) | Planlandı |
 
 ---
 
@@ -309,19 +309,24 @@ search → (eşik üstü mü?) → generate_answer → groundedness_check → (d
 
 ---
 
-## FAZ 9 — Multi-Tenant Sıkılaştırma + Cila (Sırada)
+## FAZ 9 — Multi-Tenant Sıkılaştırma (Kısmi Kapsamla Sonlandırıldı)
 
 **Test şirketleri:**
 - A Şirketi (orijinal): `4d3ef371-7d0e-4111-91d0-aa8ffe7e0188` — izin politikası (1 yıl sonra hak, 1-5 yıl kıdem→14 gün, 5+ yıl→20 gün).
 - B Şirketi (Faz 9.1'de eklendi): `e5e5fa0d-2b04-4a08-b210-915ad9d85e5f`, doküman ID `4e711598-bf6e-4764-be3b-18f818378655` — bilinçli olarak farklı sayılarla (6 ay sonra hak, kıdeme bakılmaksızın 25 gün, 1 hafta önceden talep) izolasyon testlerinde karışıklığı kolayca fark edebilmek için.
 
-**9.1-9.2 durumu:** İkinci şirket oluşturuldu, manuel izolasyon testi yapıldı — B şirketi sorgusu doğru şekilde **sadece B'nin verisini** kullandı (A'nın hiçbir sayısı karışmadı). Bu süreçte yukarıda anlatılan iki gerçek LLM/groundedness bug'ı bulunup düzeltildi. Otomatik (pytest) izolasyon testi henüz yazılmadı — sırada.
+**Tamamlanan:**
+- **9.1** — İkinci şirket + farklı içerikli doküman oluşturuldu.
+- **9.2** — Manuel izolasyon testi (B şirketi sorgusu doğru şekilde sadece B'nin verisini kullandı, A'nın hiçbir sayısı karışmadı) + otomatik pytest testleri (`test_retrieval.py` — `search_relevant_chunks`'ın şirketler arası hiç karışmadığını ve onaysız dokümanların çok şirketli ortamda da göz ardı edildiğini kanıtlıyor).
+- Bu süreçte **iki önemli, projenin genelini ilgilendiren LLM bug'ı** bulunup düzeltildi (bkz. Groundedness Check bölümü): `think=False` zorunluluğu ve groundedness prompt'unun determinizmi (`temperature=0`).
 
-**Kalan yapılacaklar (orijinal plan):**
-- İkinci bir demo şirket eklenip `company_id` izolasyonunun gerçekten test edilmesi.
-- PostgreSQL Row Level Security (RLS) eklenmesi.
-- Genel hata yönetimi gözden geçirmesi.
-- README.
+**Bilinçli olarak kapsam dışı bırakılan (RLS yorgunluğu/karmaşıklık nedeniyle durma kararı):**
+- **9.3 — PostgreSQL Row Level Security (RLS):** Tasarımı konuşuldu (`FORCE ROW LEVEL SECURITY` gerekliliği, `set_company_context()` mekanizması, `GET /documents`/`GET /documents/{id}`'nin şu an `company_id` filtrelemediği bulgusu dahil) ama **uygulanmadı.** İzolasyon şu an sadece **uygulama seviyesinde** (`WHERE company_id=`, artık testlerle de doğrulanmış) — veritabanı seviyesinde ikinci bir savunma katmanı yok. Bilinçli bir kapsam kararı: bu proje bir portföy/öğrenme projesi, RLS kendi başına ayrı bir öğrenme konusu olarak not edildi.
+- **9.6 — Genel hata yönetimi gözden geçirmesi (global exception handler):** Hiç başlanmadı.
+- **9.7 — README:** Kapsam dışına alındı — proje kapanışında (genel değerlendirme adımında) ele alınacak.
+- **Yan bulgu, henüz düzeltilmedi:** `GET /documents` ve `GET /documents/{id}` endpoint'leri `company_id`'ye göre filtrelemiyor — teorik olarak `document_id`'sini bilen biri başka bir şirketin belgesini görebilir (UUID'nin tahmin edilemezliğine güveniyor, gerçek bir erişim kontrolü yok). RLS uygulanmadığı için bu açık kapalı kalmadı.
+
+**Faz 9, bu kapsamla sonlandırıldı.**
 
 ---
 
@@ -337,10 +342,12 @@ Proje boyunca bulunan, bilinçli olarak MVP kapsamı dışında bırakılan nokt
 6. Sadece Gmail/App Password test edildi; OAuth2, Outlook/Exchange kurumsal IMAP denenmedi.
 7. Gerçek bir reranker modeli yok — sadece groundedness check (aynı LLM ile ikinci doğrulama) eklendi; cross-encoder tabanlı ayrı bir reranker, ek VRAM maliyeti nedeniyle bilinçli olarak eklenmedi.
 8. KVKK/veri saklama-silme politikası uygulanmadı.
-9. RLS henüz yok — sadece uygulama seviyesi (`WHERE company_id=`) filtreleme.
+9. RLS henüz yok (Faz 9'da bilinçli olarak ertelendi) — sadece uygulama seviyesi (`WHERE company_id=`) filtreleme, artık testlerle doğrulanmış durumda.
 10. OCR onay ekranında sadece metin düzenlenebiliyor, görsel değil.
 11. Uygulamanın kendisi (FastAPI/Next.js) container'lanmadı — sadece altyapı servisleri (Postgres/Redis) Docker'da.
 12. `honcho`/`tmux`/`httpx2` gibi bağımlılıklar henüz bir `requirements.txt`'te belgelenmedi.
+13. `GET /documents` ve `GET /documents/{id}` endpoint'leri `company_id`'ye göre filtrelemiyor — teorik olarak `document_id`'sini bilen biri başka bir şirketin belgesini görebilir. RLS uygulanmadığı için bu, veritabanı seviyesinde de kapatılmadı.
+14. Global bir exception handler / genel hata yönetimi gözden geçirmesi yapılmadı (Faz 9'un bir parçası olarak planlanmıştı, kapsam dışına alındı).
 
 ---
 
@@ -372,9 +379,9 @@ git commit -m "Faz X.Y: ..."
 
 ## Şu Anki Durum / Devam Noktası
 
-**Tamamlanan:** Faz 0-8 (tamamı) + Groundedness Check.
-**Sırada:** Faz 9 — Multi-Tenant Sıkılaştırma + Cila (ikinci demo şirket, RLS, hata yönetimi, README).
-**Sonraki planlanan adımlar (kararlaştırılmış sıra):** Faz 9 → `requirements.txt` + CI/CD (GitHub Actions) → Docker (uygulamanın kendisini container'lama) → Genel değerlendirme (tüm `.md` dosyalarının son güncellemesi).
-**Kapsam dışı bırakılan (bilinçli karar):** Kimlik doğrulama (authentication) ve gerçek bir sunucuya deploy — ikisi de projenin mevcut karmaşıklığına (çok süreçli mimari, GPU bağımlılığı, kişisel e-posta hesabı) göre ayrı, daha sade projelerde öğrenilmesi daha sağlıklı bulunan konular olarak not edildi.
+**Tamamlanan:** Faz 0-8 (tamamı) + Groundedness Check + Faz 9 (kısmi kapsam — ikinci şirket, otomatik izolasyon testleri; RLS ve genel hata yönetimi bilinçli olarak ertelendi).
+**Sırada:** `requirements.txt` + CI/CD (GitHub Actions).
+**Sonraki planlanan adımlar (kararlaştırılmış sıra):** `requirements.txt` + CI/CD → Docker (uygulamanın kendisini container'lama) → Genel değerlendirme + tüm `.md` dosyalarının son güncellemesi (**proje kapanışı**).
+**Kapsam dışı bırakılan (bilinçli karar):** Kimlik doğrulama, gerçek bir sunucuya deploy, PostgreSQL RLS, global exception handler — hepsi ayrı notlar olarak "Bilinen Sınırlamalar" listesinde, gelecekteki projelerde/iterasyonlarda ele alınabilir.
 
 Yeni bir sohbette kaldığımız yerden devam edilecekse: bu dosya (`Gelistirme_Plani.md`) ve `Proje_Dokumantasyonu.md` yeterlidir.
