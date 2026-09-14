@@ -98,8 +98,8 @@ bash stop_dev.sh          # aktif görev kontrolü + durdur + doğrula
 | 8 | Test + Loglama + Config Doğrulama | ✅ Tamamlandı |
 | — | Groundedness Check (RAG kalite) | ✅ Tamamlandı |
 | 9 | Multi-Tenant Sıkılaştırma | ⚠️ Kısmi kapsamla sonlandırıldı (ikinci şirket + izolasyon testleri yapıldı; RLS bilinçli olarak ertelendi) |
-| — | `requirements.txt` + CI/CD (GitHub Actions) | ⏳ Sırada |
-| — | Docker (uygulamanın kendisini container'lama) | Planlandı |
+| — | `requirements.txt` + CI/CD (GitHub Actions) | ✅ Tamamlandı (ilk denemede başarılı) |
+| — | Docker (uygulamanın kendisini container'lama) | ⏳ Sırada |
 | — | Genel değerlendirme + tüm `.md` dosyalarının son güncellemesi (proje kapanışı) | Planlandı |
 
 ---
@@ -330,6 +330,22 @@ search → (eşik üstü mü?) → generate_answer → groundedness_check → (d
 
 ---
 
+## `requirements.txt` + CI/CD (GitHub Actions)
+
+**Kurulanlar:**
+- `backend/requirements.txt` — doğrudan kurulan paketler, gruplandırılmış ve versiyonlanmış (`pip freeze` çıktısından, gerçek `.venv`'den alınan sürümlerle). Alt bağımlılıklar elle listelenmedi, `pip`'e bırakıldı.
+- `.github/workflows/tests.yml` — GitHub Actions CI (sadece CI, **CD/deploy kapsamda değil** — bilinçli bir tercih, ayrı bir projede deploy deneyimi kazanılması kararıyla tutarlı). `main`'e her push/PR'da: Postgres+pgvector ve Redis service container'ları (health-check ile hazır olma garantisi) → bağımlılık kurulumu → `alembic upgrade head` → `pytest tests/ -v --cov`.
+
+**Bilinçli tasarım kararları:**
+- CI ortamında **gerçek** kimlik bilgileri kullanılmıyor — `.env`'deki zorunlu alanlar (Faz 8.9 `pydantic-settings` doğrulaması nedeniyle) sahte ama biçimsel olarak geçerli değerlerle (`EMAIL_APP_PASSWORD: dummy-password-for-ci` gibi) dolduruluyor. Hiçbir test gerçekten bu değerlerle bir yere bağlanmıyor.
+- Ollama/GPU, CI runner'ında **hiç yok** — bu sorun değil, çünkü Faz 8'de kurduğumuz mock stratejisi sayesinde testlerin hiçbiri gerçek bir Ollama bağlantısı gerektirmiyor (Faz 8.5'te Ollama kapalıyken bile geçtiği zaten doğrulanmıştı).
+- Frontend (Next.js) CI kapsamına alınmadı — hiç otomatik test yazılmadı (bilinen sınırlama).
+- PostgreSQL'e CI'da `localhost` üzerinden erişiliyor — yerel WSL2/`host.docker.internal` ayrımı burada geçerli değil, GitHub'ın kendi altyapısında servis container'ları doğrudan erişilebilir.
+
+**Doğrulama:** İlk push'ta ilk denemede başarılı (yeşil) — 34 test, 58 saniyede tamamlandı.
+
+---
+
 ## Bilinen Sınırlamalar (Genel Özet)
 
 Proje boyunca bulunan, bilinçli olarak MVP kapsamı dışında bırakılan noktaların toplu listesi (detaylar ilgili faz bölümlerinde):
@@ -379,9 +395,9 @@ git commit -m "Faz X.Y: ..."
 
 ## Şu Anki Durum / Devam Noktası
 
-**Tamamlanan:** Faz 0-8 (tamamı) + Groundedness Check + Faz 9 (kısmi kapsam — ikinci şirket, otomatik izolasyon testleri; RLS ve genel hata yönetimi bilinçli olarak ertelendi).
-**Sırada:** `requirements.txt` + CI/CD (GitHub Actions).
-**Sonraki planlanan adımlar (kararlaştırılmış sıra):** `requirements.txt` + CI/CD → Docker (uygulamanın kendisini container'lama) → Genel değerlendirme + tüm `.md` dosyalarının son güncellemesi (**proje kapanışı**).
+**Tamamlanan:** Faz 0-8 (tamamı) + Groundedness Check + Faz 9 (kısmi kapsam — ikinci şirket, otomatik izolasyon testleri; RLS ve genel hata yönetimi bilinçli olarak ertelendi) + `requirements.txt` + CI/CD (GitHub Actions, ilk denemede başarılı).
+**Sırada:** Docker (uygulamanın kendisini container'lama).
+**Sonraki planlanan adımlar (kararlaştırılmış sıra):** Docker → Genel değerlendirme + tüm `.md` dosyalarının son güncellemesi (**proje kapanışı**).
 **Kapsam dışı bırakılan (bilinçli karar):** Kimlik doğrulama, gerçek bir sunucuya deploy, PostgreSQL RLS, global exception handler — hepsi ayrı notlar olarak "Bilinen Sınırlamalar" listesinde, gelecekteki projelerde/iterasyonlarda ele alınabilir.
 
 Yeni bir sohbette kaldığımız yerden devam edilecekse: bu dosya (`Gelistirme_Plani.md`) ve `Proje_Dokumantasyonu.md` yeterlidir.
