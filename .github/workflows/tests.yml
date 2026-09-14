@@ -1,0 +1,76 @@
+name: Backend Testleri
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: ik_asistan
+          POSTGRES_PASSWORD: dev_password_degistir
+          POSTGRES_DB: ik_asistan_test_db
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      DATABASE_URL: postgresql://ik_asistan:dev_password_degistir@localhost:5432/ik_asistan_test_db
+      TEST_DATABASE_URL: postgresql://ik_asistan:dev_password_degistir@localhost:5432/ik_asistan_test_db
+      REDIS_URL: redis://localhost:6379/0
+      OLLAMA_BASE_URL: http://localhost:11434
+      LLM_MODEL: qwen3.5:9b
+      VL_MODEL: qwen3-vl:8b
+      OCR_MODEL: glm-ocr
+      EMBEDDING_MODEL: qwen3-embedding:0.6b
+      EMAIL_ADDRESS: test@example.com
+      EMAIL_APP_PASSWORD: dummy-password-for-ci
+      IMAP_SERVER: imap.example.com
+      SMTP_SERVER: smtp.example.com
+      EMAIL_DRY_RUN: "true"
+      LOG_LEVEL: INFO
+
+    steps:
+      - name: Kodu indir
+        uses: actions/checkout@v4
+
+      - name: Python kur
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Bağımlılıkları kur
+        run: pip install -r backend/requirements.txt
+
+      - name: pgvector eklentisini etkinleştir
+        run: |
+          PGPASSWORD=dev_password_degistir psql -h localhost -U ik_asistan -d ik_asistan_test_db -c "CREATE EXTENSION IF NOT EXISTS vector;"
+
+      - name: Veritabanı şemasını uygula
+        working-directory: backend
+        run: alembic upgrade head
+
+      - name: Testleri çalıştır
+        working-directory: backend
+        run: pytest tests/ -v --cov=app --cov-report=term-missing
