@@ -1,0 +1,39 @@
+# --- Web Framework ---
+fastapi==0.141.1
+uvicorn[standard]==0.52.0
+python-multipart==0.0.32
+
+# --- Veritabanı ---
+sqlalchemy==2.0.51
+psycopg2-binary==2.9.12
+pgvector==0.5.0
+alembic==1.18.5
+
+# --- Asenkron Görev Kuyruğu ---
+celery==5.6.3
+redis==8.1.0
+
+# --- Yapay Zeka / RAG ---
+ollama==0.6.2
+langgraph==1.2.10
+numpy==2.5.1
+
+# --- Belge İşleme ---
+pdfplumber==0.11.10
+pymupdf==1.28.0
+
+# --- E-posta ---
+imapclient==3.1.0
+
+# --- Config / Ayarlar ---
+python-dotenv==1.2.2
+pydantic-settings==2.15.0
+
+# --- Test ---
+pytest==9.1.1
+pytest-cov==7.1.0
+httpx==0.28.1
+httpx2==2.12.0
+
+# --- Geliştirme Ortamı Süreç Yönetimi ---
+honcho==2.0.0
