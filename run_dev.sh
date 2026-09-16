@@ -188,7 +188,7 @@ if ! tmux has-session -t "$SESSION" 2>/dev/null; then
 
   tmux send-keys \
     -t "$TERMINAL_PANE" \
-    "clear; echo '================================'; echo '🖥️  Ubuntu Terminal'; echo '================================'; echo ''; echo 'FastAPI link: http://localhost:8000/docs'; echo 'Next.js link: http://localhost:5300'; echo '';echo ''" \
+    "clear; echo '================================'; echo '🖥️  Ubuntu Terminal'; echo '================================'; echo ''; echo 'FastAPI link: http://localhost:8000/docs'; echo 'Next.js link: http://localhost:3000'; echo '';echo ''" \
     C-m
 
 
@@ -250,12 +250,12 @@ fi
 
 
 # ----------------------------------------------------------
-# NEXT.JS :5300
+# NEXT.JS :3000
 # ----------------------------------------------------------
 
 wait_for \
-  "Next.js :5300 hazır." \
-  "curl -sS -o /dev/null -w '%{http_code}' http://127.0.0.1:5300 | grep -Eq '^[1-4][0-9][0-9]$'" \
+  "Next.js :3000 hazır." \
+  "curl -sS -o /dev/null -w '%{http_code}' http://127.0.0.1:3000 | grep -Eq '^[1-4][0-9][0-9]$'" \
   "$TIMEOUT"
 
 if [ $? -ne 0 ]; then

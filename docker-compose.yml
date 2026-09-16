@@ -74,6 +74,13 @@ services:
     depends_on:
       migrate:
         condition: service_completed_successfully
+  
+  frontend:
+    build: ./frontend
+    ports:
+      - "3000:3000"
+    depends_on:
+      - api
 
 volumes:
   pgdata:

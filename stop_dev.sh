@@ -138,13 +138,13 @@ fi
 # NEXT.JS PORT KONTROLÜ
 # ----------------------------------------------------------
 
-if ss -tln 2>/dev/null | grep -q ':5300 '; then
+if ss -tln 2>/dev/null | grep -q ':3000 '; then
 
-  echo "⚠️ 5300 portu hâlâ dinleniyor (Next.js tam kapanmamış olabilir)."
+  echo "⚠️ 3000 portu hâlâ dinleniyor (Next.js tam kapanmamış olabilir)."
 
 else
 
-  echo "✅ 5300 portu boş (Next.js kapandı)."
+  echo "✅ 3000 portu boş (Next.js kapandı)."
 
 fi
 

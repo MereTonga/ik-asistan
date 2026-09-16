@@ -70,7 +70,7 @@ def check_fastapi():
 
 def check_nextjs():
     """Next.js ana sayfasına erişimi ve temel HTML yanıtını kontrol eder."""
-    frontend_url = "http://127.0.0.1:5300"
+    frontend_url = "http://127.0.0.1:3000"
     try:
         req = urllib.request.Request(
             frontend_url, headers={"User-Agent": "HealthCheck"}
