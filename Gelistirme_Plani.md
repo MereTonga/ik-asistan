@@ -99,8 +99,8 @@ bash stop_dev.sh          # aktif görev kontrolü + durdur + doğrula
 | — | Groundedness Check (RAG kalite) | ✅ Tamamlandı |
 | 9 | Multi-Tenant Sıkılaştırma | ⚠️ Kısmi kapsamla sonlandırıldı (ikinci şirket + izolasyon testleri yapıldı; RLS bilinçli olarak ertelendi) |
 | — | `requirements.txt` + CI/CD (GitHub Actions) | ✅ Tamamlandı (ilk denemede başarılı) |
-| — | Docker (uygulamanın kendisini container'lama) | ⏳ Sırada |
-| — | Genel değerlendirme + tüm `.md` dosyalarının son güncellemesi (proje kapanışı) | Planlandı |
+| 10 | Docker (uygulamanın kendisini container'lama) | ✅ Tamamlandı |
+| — | Genel değerlendirme + README + dokümantasyon kapanışı | ✅ Tamamlandı — **proje kapatıldı** |
 
 ---
 
@@ -346,6 +346,30 @@ search → (eşik üstü mü?) → generate_answer → groundedness_check → (d
 
 ---
 
+## FAZ 10 — Docker (Uygulamanın Kendisini Container'lama)
+
+**Motivasyon:** Faz 0'dan beri sadece **altyapı** (Postgres, Redis) Docker'daydı; FastAPI/Celery/Next.js hâlâ yerel `.venv`/`npm run dev` ile çalışıyordu. Bu faz, tüm sistemi tek komutla (`docker compose up`) ayağa kalkacak hale getirdi.
+
+**Kurulanlar:**
+- `backend/Dockerfile` — tek aşamalı (`python:3.12-slim`). `api`, `worker`, `beat`, `migrate` **aynı image'ı** kullanıyor, sadece `command:` farklı (gereksiz tekrar yok).
+- `frontend/Dockerfile` — **multi-stage build** (`deps` → `builder` → `runner`), Next.js'in `output: "standalone"` modu ile. Sonuç: 358MB (backend 716MB'a kıyasla belirgin küçük).
+- `docker-compose.yml` genişletildi: `migrate` (tek seferlik, `service_completed_successfully` ile diğerlerinin beklediği), `api`, `worker`, `beat`, `frontend` servisleri + Postgres/Redis health check'leri.
+- `db/init/01-enable-pgvector.sql` — `docker-entrypoint-initdb.d` mekanizmasıyla, veritabanı ilk oluşturulduğunda `CREATE EXTENSION vector` **otomatik** çalışıyor (Faz 2'den beri elle tekrarladığımız adım kalıcı olarak otomatikleşti).
+
+**Bulunup çözülen sorunlar:**
+1. **`type "vector" does not exist`** — `docker compose down -v` sonrası temiz volume'da pgvector eklentisi hiç etkinleştirilmemişti → `db/init/` betiğiyle kalıcı olarak otomatikleştirildi.
+2. **`database "ik_asistan" does not exist` (log gürültüsü)** — `pg_isready -U ik_asistan` komutu, `-d` verilmediğinde kullanıcı adıyla aynı isimli bir veritabanı arıyor. **Önemli not:** `pg_isready` aslında veritabanına **hiç bağlanmıyor** (PostgreSQL dokümantasyonu), sadece sunucunun yanıt verip vermediğine bakıyor — yani bu mesaj health check'i hiç etkilemiyordu, sadece log gürültüsüydü. `-d postgres` eklenerek susturuldu.
+3. **`extra_hosts: host.docker.internal:host-gateway` eklememiz, Ollama bağlantısını BOZDU.** Docker Desktop (Windows/WSL2), `host.docker.internal`'i **zaten otomatik ve doğru** çözüyor; `host-gateway` özel değeri ise container'ın kendi köprü ağı geçidine işaret ediyor (orada Ollama yok → `Connection refused`). **Ders: Docker Desktop'ta bu satır gereksiz, hatta zararlı.** Kaldırılınca bağlantı düzeldi. (Native Linux Docker'da ise gerekli — ayrım önemli.)
+4. **Frontend'e bağlanılamaması** — container içinde Next.js'in dinlediği port ile compose'daki eşleştirme arasında uyumsuzluk (yerelde `5300` kullanılıyormuş). Tüm port referansları `3000`'e hizalanarak çözüldü. **Ders:** Bu tür "bağlanamıyorum" durumlarında `docker compose logs <servis>` en hızlı teşhis aracı — sunucular başlarken hangi portu dinlediklerini kendileri loglar.
+
+**Öğrenilen kavramlar:** Multi-stage build (derleme araçlarını nihai image'dan atma), `npm ci` vs `npm install` (tekrarlanabilirlik), Docker katman önbelleği (`COPY requirements.txt` → `pip install` → `COPY . .` sıralamasının nedeni), content-addressable storage (aynı image'ın farklı tag'lerinin diskte tek kopya durması).
+
+**Bilinen sorun (çözülmedi):** `run_dev.sh`/`stop_dev.sh` (Honcho+tmux geliştirme ortamı), artık `docker-compose.yml`'de `api`/`worker`/`beat`/`frontend` servisleri de bulunduğu için **çakışıyor** — `run_dev.sh` çalıştırıldığında hem container'daki hem Honcho'daki servisler aynı portları isteyecek. Çözüm yolu konuşuldu (Docker Compose `profiles` özelliğiyle servisleri etiketlemek) ama **uygulanmadı** — proje Docker moduna geçtiği için bu script'lere pratik ihtiyaç kalmadı, ileride ayrıca ele alınmak üzere bırakıldı.
+
+**Faz 10 tamamlandı.**
+
+---
+
 ## Bilinen Sınırlamalar (Genel Özet)
 
 Proje boyunca bulunan, bilinçli olarak MVP kapsamı dışında bırakılan noktaların toplu listesi (detaylar ilgili faz bölümlerinde):
@@ -360,10 +384,13 @@ Proje boyunca bulunan, bilinçli olarak MVP kapsamı dışında bırakılan nokt
 8. KVKK/veri saklama-silme politikası uygulanmadı.
 9. RLS henüz yok (Faz 9'da bilinçli olarak ertelendi) — sadece uygulama seviyesi (`WHERE company_id=`) filtreleme, artık testlerle doğrulanmış durumda.
 10. OCR onay ekranında sadece metin düzenlenebiliyor, görsel değil.
-11. Uygulamanın kendisi (FastAPI/Next.js) container'lanmadı — sadece altyapı servisleri (Postgres/Redis) Docker'da.
-12. `honcho`/`tmux`/`httpx2` gibi bağımlılıklar henüz bir `requirements.txt`'te belgelenmedi.
+11. Uygulamanın kendisi container'landı (Faz 10) — ancak `run_dev.sh`/`stop_dev.sh` (Honcho+tmux geliştirme ortamı) artık compose ile **çakışıyor**, `profiles` çözümü uygulanmadı.
+12. `httpx2` gibi sonradan eklenen bağımlılıklar `requirements.txt`'te — `honcho`/`tmux` da orada, ancak `tmux` bir sistem paketi olarak README'de belirtilmeli.
 13. `GET /documents` ve `GET /documents/{id}` endpoint'leri `company_id`'ye göre filtrelemiyor — teorik olarak `document_id`'sini bilen biri başka bir şirketin belgesini görebilir. RLS uygulanmadığı için bu, veritabanı seviyesinde de kapatılmadı.
 14. Global bir exception handler / genel hata yönetimi gözden geçirmesi yapılmadı (Faz 9'un bir parçası olarak planlanmıştı, kapsam dışına alındı).
+15. Chunk'lama naif (`\n\n` ile paragraf bölme + `min_length` filtresi) — semantik/başlık hiyerarşisine duyarlı bir bölme yapılmadı.
+16. `RAG_CONFIDENCE_THRESHOLD` (0.55) hiç gerçek ölçekte kalibre edilmedi — Faz 1'deki üç örnek cümlelik ölçümden gelen bir başlangıç tahmini.
+17. Test şirketleri ve dokümanları **elle** (`psql` + `seed_test_hr_data.py`) oluşturuluyor — tekrarlanabilir bir seed/fixture betiği yok, `docker compose down -v` sonrası hepsi kayboluyor.
 
 ---
 
@@ -393,11 +420,33 @@ git add .
 git commit -m "Faz X.Y: ..."
 ```
 
+## Proje Kapanış Değerlendirmesi
+
+**Projenin niteliği:** Bitmiş bir **portföy/öğrenme projesi**. Eksiksiz bir ticari ürün değil — ve zaten öyle olması hedeflenmedi. Kapsam sınırları bilinçli çizildi ve her biri gerekçesiyle belgelendi.
+
+### Güçlü Yanlar
+
+- **Gerçek koşullarda kanıtlanmış çekirdek işlevsellik** — sistem, gerçek Gmail/Outlook hesapları arasında, gerçek e-posta protokolüyle, çok sayıda senaryoyla test edildi. Faz 6'daki `\r\n`, charset, IMAP `PEEK` gibi bulgular yalnızca gerçek testlerde ortaya çıkabilecek türdendi.
+- **Bilinçli güvenlik tasarımı** — insan onayı (düzenlenebilir OCR çıktısıyla), halüsinasyona karşı iki katmanlı savunma (güven eşiği + groundedness check), şirket bazlı izolasyon (testlerle kanıtlanmış), idempotency, dağıtık kilit.
+- **Mühendislik disiplini katmanları** — 34 otomatik test (mock ile dış servislerden bağımsız), CI (GitHub Actions), yapılandırılmış loglama, fail-fast config doğrulama, tam container'ize sistem.
+- **Belgelenmiş hata/çözüm geçmişi** — `think=False` bulgusu (Faz 1'den beri gizli duran sorunun iki faz sonra doğru teşhisi), race condition'ın gerçek koşullarda ortaya çıkışı ve çözümü, `extra_hosts`'un fayda değil zarar verdiğinin keşfi. Bu geçmiş, projenin en öğretici kısmı.
+
+### Zayıf Yanlar / Eksikler
+
+Detaylı liste yukarıdaki "Bilinen Sınırlamalar" bölümünde. En kritik üçü:
+1. **Kimlik doğrulama yok** — sistemi gerçek bir çok-kullanıcılı ürün olmaktan alıkoyan en büyük eksik.
+2. **RLS yok** — izolasyon sadece uygulama katmanında (test edilmiş ve çalışıyor, ama ikinci savunma hattı yok).
+3. **RAG kalitesinde naif noktalar** — basit chunk'lama, kalibre edilmemiş eşik, gerçek reranker yokluğu.
+
+### Gelecekteki Projeler İçin Not Alınan Konular
+
+Bu projede bilinçli olarak kapsam dışı bırakılan, ayrı/daha sade projelerde öğrenilmesi daha sağlıklı bulunan konular: **kimlik doğrulama (JWT/oturum yönetimi)**, **PostgreSQL Row Level Security**, **gerçek bir sunucuya deploy (CD)**.
+
+---
+
 ## Şu Anki Durum / Devam Noktası
 
-**Tamamlanan:** Faz 0-8 (tamamı) + Groundedness Check + Faz 9 (kısmi kapsam — ikinci şirket, otomatik izolasyon testleri; RLS ve genel hata yönetimi bilinçli olarak ertelendi) + `requirements.txt` + CI/CD (GitHub Actions, ilk denemede başarılı).
-**Sırada:** Docker (uygulamanın kendisini container'lama).
-**Sonraki planlanan adımlar (kararlaştırılmış sıra):** Docker → Genel değerlendirme + tüm `.md` dosyalarının son güncellemesi (**proje kapanışı**).
-**Kapsam dışı bırakılan (bilinçli karar):** Kimlik doğrulama, gerçek bir sunucuya deploy, PostgreSQL RLS, global exception handler — hepsi ayrı notlar olarak "Bilinen Sınırlamalar" listesinde, gelecekteki projelerde/iterasyonlarda ele alınabilir.
+**Tamamlanan:** Faz 0-10'un tamamı + Groundedness Check + CI. Proje **kapatıldı**.
+**Kapsam dışı bırakılan (bilinçli karar):** Kimlik doğrulama, gerçek sunucuya deploy, PostgreSQL RLS, global exception handler — hepsi "Bilinen Sınırlamalar" listesinde gerekçeleriyle kayıtlı.
 
-Yeni bir sohbette kaldığımız yerden devam edilecekse: bu dosya (`Gelistirme_Plani.md`) ve `Proje_Dokumantasyonu.md` yeterlidir.
+**Projeye yeni bakan biri için giriş noktası:** `README.md` (kurulum + kullanım), ardından `Proje_Dokumantasyonu.md` (mimari gerekçeler), ardından bu dosya (uygulama geçmişi ve alınan kararlar).
