@@ -1,8 +1,12 @@
 import sys
 import os
+from unittest.mock import patch
+
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 import pytest
+from alembic import command
+from alembic.config import Config
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from dotenv import load_dotenv
@@ -13,6 +17,22 @@ TEST_DATABASE_URL = os.getenv("TEST_DATABASE_URL")
 
 engine = create_engine(TEST_DATABASE_URL)
 TestSessionLocal = sessionmaker(bind=engine)
+
+
+@pytest.fixture(scope="session", autouse=True)
+def migrate_test_database():
+    """Apply the current Alembic schema before any test accesses the database."""
+    if not TEST_DATABASE_URL:
+        pytest.fail("TEST_DATABASE_URL must be set to run database tests")
+
+    alembic_config = Config(
+        os.path.join(os.path.dirname(__file__), "../alembic.ini")
+    )
+    alembic_config.set_main_option("sqlalchemy.url", TEST_DATABASE_URL)
+
+    # env.py uses DATABASE_URL for normal application migrations.
+    with patch.dict(os.environ, {"DATABASE_URL": TEST_DATABASE_URL}):
+        command.upgrade(alembic_config, "head")
 
 
 @pytest.fixture
