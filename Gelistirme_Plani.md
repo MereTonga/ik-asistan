@@ -109,7 +109,7 @@ bash stop_dev.sh          # aktif görev kontrolü + durdur + doğrula
 | 17 | Paket 3/B: OCR sağlık kontrolü, belge emekliye ayırma/silme, İK bildirimi | ✅ Tamamlandı (27 Ekim 2026) |
 | 18 | Paket 3/C: "kime ne cevap" modeli (belge görünürlüğü, yetkili gönderenler, varsayılan şirket, şirket silme) | ✅ Tamamlandı (27 Ekim 2026) |
 | 19 | Paket 3/D: thread memory (konuşma hafızası) + test panelinde takip sorusu | ✅ Tamamlandı (27 Ekim 2026) |
-| 20 | Paket 3/E: bağımlılıklar, imajlar, CI | ⏳ Sırada |
+| 20 | Paket 3/E: bağımlılıklar, imajlar (root'suz, node 22), CI | ✅ Tamamlandı (27 Ekim 2026) |
 | 21 | Paket 4: dokümantasyon | ⏳ Sırada |
 | — | Genel değerlendirme + README + dokümantasyon kapanışı | ✅ Tamamlandı — **proje kapatıldı** |
 
@@ -539,6 +539,21 @@ search → (eşik üstü mü?) → generate_answer → groundedness_check → (d
 
 ---
 
+## FAZ 20 — Paket 3/E (Bağımlılıklar, İmajlar, CI)
+
+**Yapılanlar:**
+- **20.0 — Hafıza notu.** Faz 19 denemesinde model, takip sorusunda belgede olan bir bilgiye ("bir hafta önceden") "bilgi yok" demişti; not "dokümanda cevabı olan bilgiyi önceki cevapta söylenmiş olsa bile tekrar söyle" biçimine getirildi.
+- **20.1 — Frontend bağımlılıkları.** `next` ve `eslint-config-next` 16.3.1 → 16.4.3 (npm audit'teki iki critical danışmanlık: Image Optimization RCE, `use cache` RCE ve SSRF kapandı); `react`/`react-dom` 19.3.1, `@base-ui/react` 1.9, `tailwind-merge` 3.7, `@types/node` 22, `shadcn` 4.23. `npm audit`: 0 zafiyet (dev dahil). `typescript` 7 ve `eslint` 10 major sürümleri bilinçli olarak alınmadı. **Ders:** `npm audit fix --omit=dev` dev bağımlılıklarını `node_modules`'tan siler; `npm ci` ile geri kuruldu, bayat `.next` önbelleği temizlenince build geçti.
+- **20.2 — Backend bağımlılıkları.** `fastapi` 0.141 → 0.162, `uvicorn` 0.54, `sqlalchemy` 2.0.55 (2.1 serisi kırıcı, alınmadı), `alembic` 1.20, `langgraph` 1.2.18, `ollama` 0.6.3, `pydantic-settings` 2.16, `pgvector` 0.5.1, `psycopg2-binary` 2.9.13, `python-dotenv` 1.2.4, `httpx2` 2.16. `imapclient` 4.x major sürümü gerçek IMAP hesabıyla denenmeden yükseltilmedi. 168 test güncel sürümlerle geçti.
+- **20.3 — İmajlar.** Backend container'ı `app` (uid 1000) kullanıcısıyla çalışıyor; uid, host'taki geliştirici kullanıcısıyla aynı olduğu için bind mount edilen `backend/uploads`'a yazılan dosyalar host'ta da ona ait. `/logs` ve `/app` sahipliği verildi. Frontend `node:20-slim` → `node:22-slim` (20'nin desteği Nisan 2026'da bitti), runner `nextjs` kullanıcısı, `HOSTNAME=0.0.0.0`/`PORT=3000`. Doğrulama: `id` çıktıları, `/health`, `/logs` yazma, API üzerinden gerçek yükleme → worker okudu → `failed` (sahte PNG) → silme.
+- **20.4 — CI.** Tek iş dört işe çıktı: backend testleri (pip önbelleği), frontend lint+build (node 22), Docker Compose smoke (CI için üretilen `.env`, `up --build`, `/health` ve `/companies`, `down -v`; Ollama olmadan ayağa kalkar), bağımlılık taraması (`pip-audit`, `npm audit --omit=dev --audit-level=high`; `continue-on-error`). Push edilmediği için henüz GitHub'da çalışmadı.
+
+**Test:** 168 test.
+
+**Faz 20 tamamlandı.**
+
+---
+
 ## Bilinen Sınırlamalar (Genel Özet)
 
 Proje boyunca bulunan, bilinçli olarak MVP kapsamı dışında bırakılan noktaların toplu listesi (detaylar ilgili faz bölümlerinde):
@@ -615,7 +630,7 @@ Bu projede bilinçli olarak kapsam dışı bırakılan, ayrı/daha sade projeler
 
 ## Şu Anki Durum / Devam Noktası
 
-**Tamamlanan:** Faz 0-10'un tamamı + Groundedness Check + CI; Ekim 2026'da denetim, Faz 11 (Paket 0), Faz 12 (Paket 1), Faz 13-15 (Paket 2), Faz 16-19 (Paket 3/A-D). Sıradaki: Faz 20 (bağımlılıklar, imajlar, CI), Faz 21 (Paket 4 dokümantasyon). Kimlik doğrulama bilinçli olarak kapsam dışı bırakıldı.
+**Tamamlanan:** Faz 0-10'un tamamı + Groundedness Check + CI; Ekim 2026'da denetim, Faz 11 (Paket 0), Faz 12 (Paket 1), Faz 13-15 (Paket 2), Faz 16-20 (Paket 3). Sıradaki: Faz 21 (Paket 4 dokümantasyon: README ağacı, tasarım dokümanı için "orijinal tasarım / uygulamada değişenler" tablosu, sınırlama listesinin güncellenmesi). Kimlik doğrulama bilinçli olarak kapsam dışı bırakıldı.
 **Kapsam dışı bırakılan (bilinçli karar):** Kimlik doğrulama, gerçek sunucuya deploy, PostgreSQL RLS, global exception handler — hepsi "Bilinen Sınırlamalar" listesinde gerekçeleriyle kayıtlı.
 
 **Projeye yeni bakan biri için giriş noktası:** `README.md` (kurulum + kullanım), ardından `Proje_Dokumantasyonu.md` (mimari gerekçeler), ardından bu dosya (uygulama geçmişi ve alınan kararlar).

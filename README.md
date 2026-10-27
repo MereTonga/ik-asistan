@@ -123,7 +123,7 @@ Gönderilen cevaplar `Auto-Submitted: auto-replied` gibi standart otomatik yanı
 - `glm-ocr` — temiz belgelerden hızlı OCR
 - `qwen3-embedding:0.6b` — metin vektörleştirme (1024 boyut)
 
-**Altyapı:** Docker + Docker Compose, GitHub Actions (CI)
+**Altyapı:** Docker + Docker Compose (container'lar root olmadan çalışır; backend `app` uid 1000, frontend `nextjs`), GitHub Actions (CI: test, lint/build, compose smoke, audit)
 
 ---
 
@@ -406,7 +406,15 @@ pytest tests/ -v                                  # tüm testler
 pytest tests/ --cov=app --cov-report=term-missing # coverage raporu ile
 ```
 
-> Testleri **yerel olarak** çalıştırmak için bir Python sanal ortamı ve `TEST_DATABASE_URL`'in işaret ettiği veritabanının kurulu olması gerekir. Her push'ta GitHub Actions bunu otomatik olarak temiz bir ortamda çalıştırır.
+> Testleri **yerel olarak** çalıştırmak için bir Python sanal ortamı ve `TEST_DATABASE_URL`'in işaret ettiği veritabanının kurulu olması gerekir (`docker compose up -d postgres` yeterli). Her push'ta GitHub Actions dört işi otomatik çalıştırır: backend testleri, frontend lint ve build, Docker Compose smoke (yığını sıfırdan kurup `/health` ve `/companies` kontrolü) ve bağımlılık taraması (`pip-audit`, `npm audit`; uyarı modunda, işi kırmaz).
+
+Frontend tarafında:
+
+```bash
+cd frontend
+npm run lint
+npm run build
+```
 
 ---
 
