@@ -1,11 +1,11 @@
 # --- Aşama 1: Bağımlılıkları kur ---
-FROM node:20-slim AS deps
+FROM node:22-slim AS deps
 WORKDIR /app
 COPY package.json package-lock.json ./
 RUN npm ci
 
 # --- Aşama 2: Uygulamayı derle ---
-FROM node:20-slim AS builder
+FROM node:22-slim AS builder
 WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
@@ -16,14 +16,20 @@ ENV NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL
 RUN npm run build
 
 # --- Aşama 3: Sadece çalıştırmak için gerekenler ---
-FROM node:20-slim AS runner
+FROM node:22-slim AS runner
 WORKDIR /app
 
-ENV NODE_ENV=production
+# standalone server.js varsayılan olarak localhost dinler; container dışından erişim için 0.0.0.0
+ENV NODE_ENV=production HOSTNAME=0.0.0.0 PORT=3000
 
-COPY --from=builder /app/public ./public
-COPY --from=builder /app/.next/standalone ./
-COPY --from=builder /app/.next/static ./.next/static
+# Root olarak çalışmaz
+RUN groupadd -g 1001 nodejs && useradd -m -u 1001 -g nodejs nextjs
+
+COPY --from=builder --chown=nextjs:nodejs /app/public ./public
+COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
+COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
+
+USER nextjs
 
 EXPOSE 3000
 
