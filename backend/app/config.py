@@ -47,6 +47,9 @@ class Settings(BaseSettings):
     SMTP_PORT: int = 587
     EMAIL_DRY_RUN: bool = True
     EMAIL_POLL_INTERVAL_SECONDS: float = 120
+    EMAIL_MAX_REPLIES_PER_SENDER_PER_HOUR: int = 5  # aynı gönderene saatte en fazla bu kadar cevap (döngü/istismar koruması)
+    EMAIL_SKIP_MEMORY_DAYS: int = 30  # atlanan maillerin (bilinmeyen domain, oto-yanıt) Redis'te hatırlanma süresi
+    THREAD_MATCH_WINDOW_DAYS: int = 30  # aynı gönderen + aynı konu kaç gün içinde eski thread'e bağlanır
 
     # Loglama
     LOG_LEVEL: str = "INFO"

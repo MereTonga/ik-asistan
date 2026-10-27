@@ -11,22 +11,52 @@ SMTP_PORT = settings.SMTP_PORT
 EMAIL_DRY_RUN = settings.EMAIL_DRY_RUN  # pydantic bool: "true/1/yes/on" hepsi True sayılır
 
 
-def send_reply(to_address: str, subject: str, body: str, in_reply_to_message_id: str | None = None) -> str:
-    """
-    Bir cevap e-postası gönderir. DRY_RUN modundaysa göndermez, sadece loglar.
-    Dönüş: gönderilen (ya da üretilen) mesajın Message-ID'si.
-    """
-    new_message_id = make_msgid()
+def build_reply_message(
+    to_address: str,
+    subject: str,
+    body: str,
+    in_reply_to_message_id: str | None = None,
+    references: list[str] | None = None,
+) -> MIMEText:
+    """Cevap mailini oluşturur (gönderimden bağımsız, test edilebilir).
 
+    - Otomatik yanıt olduğunu belirten standart başlıklar (RFC 3834 `Auto-Submitted`,
+      `Precedence: bulk`, Exchange için `X-Auto-Response-Suppress`) eklenir; böylece
+      karşı taraftaki tatil/oto-yanıt sistemleri bize tekrar cevap yazmaz (döngü koruması).
+    - `References`, gelen mailin zincirine gelen mailin kendi kimliği eklenerek birikimli tutulur.
+    """
     msg = MIMEText(body, "plain", "utf-8")
     msg["Subject"] = subject if subject.lower().startswith("re:") else f"Re: {subject}"
     msg["From"] = EMAIL_ADDRESS
     msg["To"] = to_address
-    msg["Message-ID"] = new_message_id
+    msg["Message-ID"] = make_msgid()
+    msg["Auto-Submitted"] = "auto-replied"
+    msg["Precedence"] = "bulk"
+    msg["X-Auto-Response-Suppress"] = "All"
 
     if in_reply_to_message_id:
         msg["In-Reply-To"] = in_reply_to_message_id
-        msg["References"] = in_reply_to_message_id
+        chain = [ref for ref in (references or []) if ref]
+        if in_reply_to_message_id not in chain:
+            chain.append(in_reply_to_message_id)
+        msg["References"] = " ".join(chain)
+
+    return msg
+
+
+def send_reply(
+    to_address: str,
+    subject: str,
+    body: str,
+    in_reply_to_message_id: str | None = None,
+    references: list[str] | None = None,
+) -> str:
+    """
+    Bir cevap e-postası gönderir. DRY_RUN modundaysa göndermez, sadece konsola yazar.
+    Dönüş: gönderilen (ya da üretilen) mesajın Message-ID'si.
+    """
+    msg = build_reply_message(to_address, subject, body, in_reply_to_message_id, references)
+    new_message_id = msg["Message-ID"]
 
     if EMAIL_DRY_RUN:
         print("=" * 60)

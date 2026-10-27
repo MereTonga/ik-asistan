@@ -1,25 +1,64 @@
 from email.utils import make_msgid
+
 import redis
-from app.config import settings
+from redis.exceptions import LockError, LockNotOwnedError
+
 from app.celery_app import celery_app
+from app.config import settings
 from app.db.session import SessionLocal
-from app.logging_config import get_logger
-from app.models import Message
-from app.email_service.reader import fetch_unseen_emails
-from app.email_service.sender import send_reply
 from app.email_service.processor import (
-    is_already_processed,
     find_company_by_email_domain,
     find_or_create_thread,
+    is_already_processed,
 )
+from app.email_service.reader import ImapInbox, parse_email, parse_headers
+from app.email_service.sender import send_reply
+from app.logging_config import get_logger
+from app.models import EmailThread, Message
 from app.rag.graph import build_rag_graph
 
-
 redis_client = redis.from_url(settings.REDIS_URL)
-EMAIL_CHECK_LOCK_KEY = "email_check_lock"
-EMAIL_CHECK_LOCK_TTL = 300
+
+EMAIL_CHECK_LOCK_KEY = "ik:email_check_lock"
+EMAIL_CHECK_LOCK_TTL = 300  # saniye; her mail işlendikten sonra yenilenir, toplam süreyi sınırlamaz
+SKIP_KEY_PREFIX = "ik:email_skip:"   # atlanan mail → sebep (bilinmeyen domain, oto-yanıt); TTL EMAIL_SKIP_MEMORY_DAYS
+RATE_KEY_PREFIX = "ik:email_rate:"   # gönderen → son 1 saatte işlenen mail sayısı
 
 logger = get_logger(__name__)
+
+
+def _skip_key(message_id: str) -> str:
+    return f"{SKIP_KEY_PREFIX}{message_id}"
+
+
+def _remember_skip(message_id: str, reason: str) -> None:
+    redis_client.set(_skip_key(message_id), reason, ex=settings.EMAIL_SKIP_MEMORY_DAYS * 24 * 3600)
+
+
+def _is_remembered_skip(message_id: str) -> bool:
+    return bool(redis_client.exists(_skip_key(message_id)))
+
+
+def _rate_limit_exceeded(sender: str) -> bool:
+    """Aynı gönderenden saatte EMAIL_MAX_REPLIES_PER_SENDER_PER_HOUR'dan fazla mail işlenmez.
+    Sayaç ilk mailde başlar ve 1 saat sonra kendiliğinden silinir."""
+    key = f"{RATE_KEY_PREFIX}{(sender or '').lower()}"
+    count = redis_client.incr(key)
+    if count == 1:
+        redis_client.expire(key, 3600)
+    return count > settings.EMAIL_MAX_REPLIES_PER_SENDER_PER_HOUR
+
+
+def _discard_incoming_stamp(db, incoming_id, thread_id, thread_was_new) -> None:
+    """Cevap üretilemedi/gönderilemedi: idempotency damgasını (gelen mesaj kaydını) geri al ki
+    bir sonraki poll aynı maili yeniden denesin. Yeni açılmış boş thread de silinir."""
+    db.query(Message).filter(Message.id == incoming_id).delete()
+    if thread_was_new:
+        remaining = db.query(Message).filter(Message.thread_id == thread_id).count()
+        if remaining == 0:
+            db.query(EmailThread).filter(EmailThread.id == thread_id).delete()
+    db.commit()
+
 
 def process_single_email(email_data: dict, db, company_override=None, send_email: bool = True) -> dict:
     """
@@ -27,13 +66,14 @@ def process_single_email(email_data: dict, db, company_override=None, send_email
     RAG, cevaplama, kayıt. Hem gerçek IMAP akışı hem de /test simülasyonu
     bu fonksiyonu kullanır - mantık tek bir yerde yaşar.
 
-    company_override: Verilirse, domain'e göre arama yapılmaz, doğrudan bu
-    şirket kullanılır (test panelinde, çeşitli domain'lerden gelen simüle
-    edilmiş maillerin tek bir test şirketine bağlanabilmesi için).
+    Sıralama bilinçli: gelen mesaj ÖNCE commit edilir (idempotency damgası: aynı mail
+    ikinci kez işlenemez), sonra cevap üretilip gönderilir, en son giden mesaj commit edilir.
+    Cevap üretme/gönderme başarısız olursa damga geri alınır ve hata yukarı fırlatılır;
+    böylece mail bir sonraki poll'da yeniden denenir, ama başarıyla gönderilmiş bir cevap
+    asla ikinci kez gönderilmez.
 
-    send_email: False verilirse SMTP'ye hiç gidilmez (EMAIL_DRY_RUN'dan
-    bağımsız). Test paneli bunu daima False geçer - simülasyon, senaryo
-    dosyasındaki adreslere gerçek mail gönderemez.
+    company_override: Verilirse, domain'e göre arama yapılmaz, doğrudan bu şirket kullanılır.
+    send_email: False verilirse SMTP'ye hiç gidilmez (test paneli daima False geçer).
     """
     if is_already_processed(email_data["message_id"], db):
         return {"status": "skipped", "reason": "already_processed"}
@@ -51,41 +91,47 @@ def process_single_email(email_data: dict, db, company_override=None, send_email
         body=email_data["body"],
     )
     db.add(incoming_message)
+    db.commit()  # idempotency damgası
+    incoming_id, thread_id = incoming_message.id, thread.id
 
-    graph = build_rag_graph()
-    rag_result = graph.invoke({
-        "company_id": str(company.id),
-        "question": email_data["body"],
-        "retrieved_chunks": [],
-        "has_confident_match": False,
-        "answer": "",
-        "was_escalated": False,
-    })
+    try:
+        graph = build_rag_graph()
+        rag_result = graph.invoke({
+            "company_id": str(company.id),
+            "question": email_data["body"],
+            "retrieved_chunks": [],
+            "has_confident_match": False,
+            "answer": "",
+            "was_escalated": False,
+        })
 
-    if send_email:
-        sent_message_id = send_reply(
-            to_address=email_data["from_address"],
-            subject=email_data["subject"],
-            body=rag_result["answer"],
-            in_reply_to_message_id=email_data["message_id"],
-        )
-    else:
-        # Simülasyon: gönderim yok, kayıt için yine de benzersiz bir Message-ID üretilir
-        sent_message_id = make_msgid()
+        if send_email:
+            sent_message_id = send_reply(
+                to_address=email_data["from_address"],
+                subject=email_data["subject"],
+                body=rag_result["answer"],
+                in_reply_to_message_id=email_data["message_id"],
+                references=email_data.get("references") or [],
+            )
+        else:
+            # Simülasyon: gönderim yok, kayıt için yine de benzersiz bir Message-ID üretilir
+            sent_message_id = make_msgid()
 
-    outgoing_message = Message(
-        thread_id=thread.id,
-        message_id_header=sent_message_id,
-        sender_type="ai_system",
-        body=rag_result["answer"],
-        was_escalated=rag_result["was_escalated"],
-    )
-    db.add(outgoing_message)
-
-    if rag_result["was_escalated"]:
-        thread.status = "escalated"
-
-    db.commit()
+        with db.begin_nested():
+            outgoing_message = Message(
+                thread_id=thread_id,
+                message_id_header=sent_message_id,
+                sender_type="ai_system",
+                body=rag_result["answer"],
+                was_escalated=rag_result["was_escalated"],
+            )
+            db.add(outgoing_message)
+            if rag_result["was_escalated"]:
+                thread.status = "escalated"
+        db.commit()
+    except Exception:
+        _discard_incoming_stamp(db, incoming_id, thread_id, is_new)
+        raise
 
     return {
         "status": "processed",
@@ -97,39 +143,89 @@ def process_single_email(email_data: dict, db, company_override=None, send_email
 @celery_app.task(name="check_new_emails")
 def check_new_emails_task():
     """
-    Celery Beat tarafından periyodik olarak tetiklenir.
-    Gelen kutusunu kontrol eder, her yeni maili process_single_email ile işler.
+    Celery Beat tarafından periyodik olarak tetiklenir. Gelen kutusundaki okunmamış mailleri
+    önce yalnızca başlıklarıyla eler (hatırlanan atlamalar, zaten işlenmişler, oto-yanıtlar,
+    bilinmeyen domain, hız sınırı), kalanları tam çekip process_single_email ile işler.
+    Başarıyla işlenen mail \\Seen (cevaplandıysa) ya da \\Seen + \\Flagged (İK'ya yönlendirildiyse)
+    olarak işaretlenir; atlananlar okunmamış kalır ki İK gelen kutusunda görsün.
     """
-    lock_acquired = redis_client.set(EMAIL_CHECK_LOCK_KEY, "1", nx=True, ex=EMAIL_CHECK_LOCK_TTL)
-    if not lock_acquired:
+    lock = redis_client.lock(EMAIL_CHECK_LOCK_KEY, timeout=EMAIL_CHECK_LOCK_TTL, blocking=False)
+    if not lock.acquire(blocking=False):
         logger.info("Önceki çalıştırma hâlâ devam ediyor")
         return {"skipped_run": True, "reason": "Önceki çalıştırma hâlâ devam ediyor"}
 
     db = SessionLocal()
-    processed_count = 0
-    skipped_count = 0
+    counters = {"processed": 0, "skipped": 0, "errors": 0}
 
     try:
-        emails = fetch_unseen_emails()
+        with ImapInbox() as inbox:
+            uids = inbox.list_unseen_uids()
+            headers = inbox.fetch_headers(uids)
 
-        for email_data in emails:
-            try:
-                result = process_single_email(email_data, db)
-                if result["status"] == "processed":
-                    processed_count += 1
-                else:
-                    skipped_count += 1
-            except Exception as e:
-                db.rollback()
-                logger.error(
-                    f"Mail işlenirken hata oluştu (message_id={email_data.get('message_id')}): {e}",
-                    exc_info=True,
-                )
-                skipped_count += 1
-                continue
+            for uid in uids:
+                try:
+                    raw_header = headers.get(uid)
+                    if raw_header is None:
+                        continue
+                    head = parse_headers(raw_header, uid)
+                    message_id = head["message_id"] or inbox.synthetic_message_id(uid)
 
-        return {"processed": processed_count, "skipped": skipped_count}
+                    if _is_remembered_skip(message_id):
+                        counters["skipped"] += 1
+                        continue
+
+                    if is_already_processed(message_id, db):
+                        # Daha önce işlenmiş ama işaretlenememiş (örn. bağlantı kopmuş) → şimdi işaretle
+                        inbox.mark_processed(uid)
+                        counters["skipped"] += 1
+                        continue
+
+                    if head["auto_reply_reason"]:
+                        logger.info(f"Oto-yanıt/sistem maili atlandı ({head['auto_reply_reason']}): {message_id}")
+                        _remember_skip(message_id, head["auto_reply_reason"])
+                        counters["skipped"] += 1
+                        continue
+
+                    company = find_company_by_email_domain(head["from_address"], db)
+                    if company is None:
+                        logger.info(f"Bilinmeyen domain, atlandı: {head['from_address']} ({message_id})")
+                        _remember_skip(message_id, "unknown_domain")
+                        counters["skipped"] += 1
+                        continue
+
+                    if _rate_limit_exceeded(head["from_address"]):
+                        # Hatırlanmaz: sayaç bir saat sonra silinince mail yeniden değerlendirilir
+                        logger.warning(f"Hız sınırı: {head['from_address']} bu saat içinde çok mail gönderdi; {message_id} ertelendi")
+                        counters["skipped"] += 1
+                        continue
+
+                    email_data = parse_email(inbox.fetch_message(uid), uid)
+                    email_data["message_id"] = message_id
+
+                    result = process_single_email(email_data, db, company_override=company)
+                    if result["status"] == "processed":
+                        counters["processed"] += 1
+                        inbox.mark_processed(uid, flagged=bool(result["was_escalated"]))
+                    else:
+                        counters["skipped"] += 1
+                        if result.get("reason") == "already_processed":
+                            inbox.mark_processed(uid)
+
+                    try:
+                        lock.extend(EMAIL_CHECK_LOCK_TTL, replace_ttl=True)
+                    except LockError:
+                        logger.warning("Kilit süresi dolmuştu, yenilenemedi")
+                except Exception as e:
+                    db.rollback()
+                    counters["errors"] += 1
+                    logger.error(f"Mail işlenirken hata oluştu (uid={uid}): {e}", exc_info=True)
+                    continue
+
+        return counters
 
     finally:
         db.close()
-        redis_client.delete(EMAIL_CHECK_LOCK_KEY)
+        try:
+            lock.release()
+        except (LockNotOwnedError, LockError):
+            logger.warning("Kilit bizde değildi (süresi dolmuş olabilir); serbest bırakılamadı")
