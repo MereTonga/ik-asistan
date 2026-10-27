@@ -140,3 +140,29 @@ def test_run_ocr_passes_good_text_through(mock_client, tmp_path):
 
     assert result["source_type"] == "ocr_complex"
     assert result["extracted_text"].startswith("# Mesai")
+
+
+# --- Faz 21.0: metin dosyaları ----------------------------------------------------
+
+def test_process_document_reads_markdown_and_text_directly(tmp_path):
+    from app.services.document_processor import process_document
+
+    md = tmp_path / "politika.md"
+    md.write_text("﻿# İzin\n\nÇalışanlar 1 yıl sonra izin hakkı kazanır.", encoding="utf-8")
+    txt = tmp_path / "not.txt"
+    txt.write_text("Düz metin politika notu burada.", encoding="utf-8")
+    empty = tmp_path / "bos.md"
+    empty.write_text("   ", encoding="utf-8")
+
+    md_result = process_document(str(md), None)
+    txt_result = process_document(str(txt), "clean")  # kalite metin için yok sayılır
+
+    assert md_result["source_type"] == "markdown_text"
+    assert md_result["extracted_text"].startswith("# İzin")  # BOM temizlendi
+    assert txt_result["source_type"] == "plain_text"
+    try:
+        process_document(str(empty), None)
+    except ValueError as e:
+        assert "boş" in str(e)
+    else:
+        raise AssertionError("ValueError bekleniyordu")

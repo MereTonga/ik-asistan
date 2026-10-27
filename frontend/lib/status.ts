@@ -14,6 +14,8 @@ export const SOURCE_LABELS: Record<string, string> = {
   ocr_clean: "OCR (temiz)",
   ocr_complex: "OCR (karmaşık)",
   seed_markdown: "Örnek veri",
+  markdown_text: "Markdown",
+  plain_text: "Düz metin",
 };
 
 export const VISIBILITY_LABELS: Record<string, string> = {

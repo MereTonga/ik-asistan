@@ -16,7 +16,10 @@ export default function UploadPage() {
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const isPdf = file?.name.toLowerCase().endsWith(".pdf");
+  const lowerName = file?.name.toLowerCase() ?? "";
+  const isImage = [".jpg", ".jpeg", ".png"].some((ext) => lowerName.endsWith(ext));
+  const isPdf = lowerName.endsWith(".pdf");
+  const isText = [".md", ".txt"].some((ext) => lowerName.endsWith(ext));
 
   const handleUpload = async () => {
     if (!file || !selected) return;
@@ -28,7 +31,7 @@ export default function UploadPage() {
     formData.append("file", file);
     formData.append("company_id", selected.id);
     formData.append("visibility", visibility);
-    if (!isPdf) {
+    if (isImage) {
       formData.append("document_quality", quality);
     }
 
@@ -59,12 +62,12 @@ export default function UploadPage() {
 
           <input
             type="file"
-            accept=".jpg,.jpeg,.png,.pdf"
+            accept=".jpg,.jpeg,.png,.pdf,.md,.txt"
             onChange={(e) => setFile(e.target.files?.[0] ?? null)}
             className="text-sm"
           />
 
-          {file && !isPdf && (
+          {file && isImage && (
             <div className="flex flex-col gap-2">
               <label className="text-sm font-medium">Belge Kalitesi</label>
               <select
@@ -81,6 +84,12 @@ export default function UploadPage() {
           {file && isPdf && (
             <p className="text-sm text-slate-500">
               PDF dosyaları otomatik olarak metin katmanından işlenir, kalite seçimi gerekmez.
+            </p>
+          )}
+
+          {file && isText && (
+            <p className="text-sm text-slate-500">
+              Markdown ve düz metin dosyaları doğrudan okunur; başlıklar (#) parçalamada korunur.
             </p>
           )}
 

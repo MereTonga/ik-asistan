@@ -18,14 +18,18 @@ from app.tasks.document_tasks import (
 
 router = APIRouter(prefix="/documents", tags=["documents"])
 
-# Yükleme doğrulaması: yalnızca bu uzantılar ve dosyanın ilk baytları (magic bytes) uyuşmalı.
-ALLOWED_EXTENSIONS = {".pdf", ".jpg", ".jpeg", ".png"}
+# Yükleme doğrulaması: yalnızca bu uzantılar; ikili dosyalarda ilk baytlar (magic bytes), metin
+# dosyalarında UTF-8 çözülebilirlik kontrol edilir.
+IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png"}
+TEXT_EXTENSIONS = {".md", ".txt"}
+ALLOWED_EXTENSIONS = {".pdf"} | IMAGE_EXTENSIONS | TEXT_EXTENSIONS
 MAGIC_BYTES = {
     ".pdf": (b"%PDF",),
     ".jpg": (b"\xff\xd8\xff",),
     ".jpeg": (b"\xff\xd8\xff",),
     ".png": (b"\x89PNG\r\n\x1a\n",),
 }
+TEXT_PROBE_BYTES = 4096
 MAX_UPLOAD_BYTES = settings.MAX_UPLOAD_MB * 1024 * 1024
 COPY_CHUNK_SIZE = 1024 * 1024
 
@@ -70,10 +74,22 @@ def _get_document_or_404(document_id: str, db: Session) -> Document:
 def _save_upload(file: UploadFile, extension: str) -> str:
     """Dosyayı doğrulayıp diske yazar, diskteki adı döner. Doğrulama geçmezse hiçbir şey yazılmaz;
     boyut sınırı aşılırsa yarım dosya silinir."""
-    head = file.file.read(8)
-    file.file.seek(0)
-    if not any(head.startswith(magic) for magic in MAGIC_BYTES[extension]):
-        raise HTTPException(status_code=400, detail="Dosya içeriği uzantısıyla uyuşmuyor")
+    if extension in TEXT_EXTENSIONS:
+        probe = file.file.read(TEXT_PROBE_BYTES)
+        file.file.seek(0)
+        if b"\x00" in probe:
+            raise HTTPException(status_code=400, detail="Dosya metin dosyası değil (ikili içerik)")
+        try:
+            probe.decode("utf-8")
+        except UnicodeDecodeError as e:
+            # Çok baytlı bir karakterin ortasında kesilmiş olabilir; yalnızca başlangıçtaki hataları ele al
+            if e.start < TEXT_PROBE_BYTES - 4:
+                raise HTTPException(status_code=400, detail="Metin dosyası UTF-8 olarak okunamadı")
+    else:
+        head = file.file.read(8)
+        file.file.seek(0)
+        if not any(head.startswith(magic) for magic in MAGIC_BYTES[extension]):
+            raise HTTPException(status_code=400, detail="Dosya içeriği uzantısıyla uyuşmuyor")
 
     saved_filename = f"{uuid.uuid4()}{extension}"
     saved_path = os.path.join(UPLOAD_DIR, saved_filename)
@@ -113,9 +129,9 @@ def upload_document(
     if extension not in ALLOWED_EXTENSIONS:
         raise HTTPException(
             status_code=400,
-            detail=f"Desteklenmeyen dosya türü '{extension or '(yok)'}'. İzin verilenler: pdf, jpg, jpeg, png",
+            detail=f"Desteklenmeyen dosya türü '{extension or '(yok)'}'. İzin verilenler: pdf, jpg, jpeg, png, md, txt",
         )
-    if extension != ".pdf" and document_quality is None:
+    if extension in IMAGE_EXTENSIONS and document_quality is None:
         raise HTTPException(status_code=400, detail="Görsel dosyalar için document_quality 'clean' ya da 'complex' olmalı")
 
     saved_filename = _save_upload(file, extension)
@@ -125,7 +141,7 @@ def upload_document(
         original_filename=file.filename,
         stored_filename=saved_filename,
         source_type="pending",
-        document_quality=None if extension == ".pdf" else document_quality,
+        document_quality=document_quality if extension in IMAGE_EXTENSIONS else None,
         visibility=visibility,
         status=DocumentStatus.PROCESSING,
         raw_extracted_text=None,

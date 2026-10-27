@@ -103,6 +103,14 @@ def process_document(file_path: str, document_quality: str | None = None) -> dic
     """
     extension = os.path.splitext(file_path)[1].lower()
 
+    if extension in (".md", ".txt"):
+        # Metin dosyaları doğrudan okunur: AI yok, OCR yok. Markdown başlıkları chunk'lamada korunur.
+        with open(file_path, "r", encoding="utf-8", errors="replace") as f:
+            text = f.read().replace("﻿", "")
+        if len(text.strip()) < 20:
+            raise ValueError("Metin dosyası boş ya da çok kısa.")
+        return {"source_type": "markdown_text" if extension == ".md" else "plain_text", "extracted_text": text}
+
     if extension == ".pdf":
         has_layer, text = _pdf_has_text_layer(file_path)
         if has_layer:

@@ -449,3 +449,40 @@ def test_visibility_can_be_changed_and_filtered(client, db_session, test_company
     listed = client.get(f"/documents?company_id={test_company.id}&visibility=public").json()
     assert [d["id"] for d in listed] == [str(doc.id)]
     assert client.get(f"/documents?company_id={test_company.id}&visibility=internal").json() == []
+
+
+# --- Faz 21.0: Markdown / düz metin yükleme ------------------------------------
+
+@patch("app.api.documents.process_uploaded_document_task")
+def test_upload_markdown_and_text_without_quality(mock_task, client, db_session, test_company, upload_dir):
+    from app.models import Document
+
+    md = client.post(
+        "/documents/upload",
+        data={"company_id": str(test_company.id), "document_quality": "clean"},  # metin için yok sayılır
+        files={"file": ("politika.md", io.BytesIO("# Başlık\n\nİzin kuralları burada.".encode("utf-8")), "text/markdown")},
+    )
+    txt = client.post(
+        "/documents/upload",
+        data={"company_id": str(test_company.id)},
+        files={"file": ("notlar.txt", io.BytesIO("Düz metin içeriği.".encode("utf-8")), "text/plain")},
+    )
+
+    assert md.status_code == 200, md.text
+    assert txt.status_code == 200, txt.text
+    doc = db_session.query(Document).filter(Document.id == md.json()["id"]).one()
+    assert doc.document_quality is None and doc.stored_filename.endswith(".md")
+    assert mock_task.delay.call_count == 2
+
+
+@patch("app.api.documents.process_uploaded_document_task")
+def test_upload_rejects_binary_disguised_as_text(mock_task, client, test_company, upload_dir):
+    response = client.post(
+        "/documents/upload",
+        data={"company_id": str(test_company.id)},
+        files={"file": ("sahte.md", io.BytesIO(b"\x89PNG\r\n\x1a\n\x00\x00\x00"), "text/markdown")},
+    )
+
+    assert response.status_code == 400
+    mock_task.delay.assert_not_called()
+    assert list(upload_dir.iterdir()) == []
