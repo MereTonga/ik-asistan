@@ -1,6 +1,3 @@
-from unittest.mock import patch
-
-
 def test_approve_document_task_creates_chunks(monkeypatch, db_session, test_session_factory, test_company):
     import app.tasks.document_tasks as document_tasks_module
     from app.models import Document, DocumentChunk

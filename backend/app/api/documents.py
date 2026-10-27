@@ -7,11 +7,8 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 from fastapi import APIRouter, UploadFile, File, Form, HTTPException
 
-from app.models import DocumentChunk
 from app.db.session import SessionLocal
-from app.models import Document, Company
-from app.services.document_processor import process_document
-from app.services.document_processor import chunk_text, get_embedding
+from app.models import Document
 from app.tasks.document_tasks import process_uploaded_document_task, approve_document_task
 
 router = APIRouter(prefix="/documents", tags=["documents"])

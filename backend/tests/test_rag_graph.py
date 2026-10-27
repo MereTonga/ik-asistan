@@ -1,4 +1,4 @@
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch
 
 
 def test_route_after_search_goes_to_generate_answer_when_confident():
