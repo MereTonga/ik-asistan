@@ -1,5 +1,7 @@
 # Backend servislerinin (migrate/api/worker/beat) ortak tanimi: ayni image, ayni .env, ayni baglanti adresleri.
+# Acik image adi: dort servis tek "ik-asistan-backend" imajini paylasir (docker images / docker ps okunabilir kalir).
 x-backend: &backend
+  image: ik-asistan-backend
   build: ./backend
   env_file: .env
   environment:
@@ -75,6 +77,7 @@ services:
         condition: service_completed_successfully
 
   frontend:
+    image: ik-asistan-frontend
     build:
       context: ./frontend
       args:
