@@ -1,36 +1,36 @@
 # --- Web Framework ---
-fastapi==0.141.1
-uvicorn[standard]==0.52.0
+fastapi==0.162.0
+uvicorn[standard]==0.54.0
 python-multipart==0.0.32
 
 # --- Veritabanı ---
-sqlalchemy==2.0.51
-psycopg2-binary==2.9.12
-pgvector==0.5.0
-alembic==1.18.5
+sqlalchemy==2.0.55   # 2.1 serisi kirici degisiklikler iceriyor; 2.0 serisinin sonunda tutuluyor
+psycopg2-binary==2.9.13
+pgvector==0.5.1
+alembic==1.20.1
 
 # --- Asenkron Görev Kuyruğu ---
 celery==5.6.3
 redis==8.1.0
 
 # --- Yapay Zeka / RAG ---
-ollama==0.6.2
-langgraph==1.2.10
+ollama==0.6.3
+langgraph==1.2.18
 
 # --- Belge İşleme ---
 pdfplumber==0.11.10
 
 # --- E-posta ---
-imapclient==3.1.0
+imapclient==3.1.0   # 4.x major surum; gercek IMAP hesabiyla denenmeden yukseltilmedi
 
 # --- Config / Ayarlar ---
-python-dotenv==1.2.2
-pydantic-settings==2.15.0
+python-dotenv==1.2.4
+pydantic-settings==2.16.1
 
 # --- Test ---
 pytest==9.1.1
 pytest-cov==7.1.0
-httpx2==2.12.0   # starlette TestClient bunu istiyor (httpx ile kullanim deprecated); httpx'i ollama zaten getiriyor
+httpx2==2.16.0   # starlette TestClient bunu istiyor (httpx ile kullanim deprecated); httpx'i ollama zaten getiriyor
 
 # --- Geliştirme Ortamı Süreç Yönetimi ---
 honcho==2.0.0
