@@ -1,11 +1,12 @@
 import json
 import os
+import uuid
 from email.utils import make_msgid
-from fastapi import APIRouter
-from fastapi import Depends
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from app.db.session import get_db
+from app.models import Company
 from app.tasks.email_tasks import process_single_email
 
 router = APIRouter(prefix="/test", tags=["test"])
@@ -22,21 +23,20 @@ def get_test_scenarios():
 
 
 @router.post("/simulate/{scenario_index}")
-def simulate_email(scenario_index: int, company_id: str, db: Session = Depends(get_db)):
+def simulate_email(scenario_index: int, company_id: uuid.UUID, db: Session = Depends(get_db)):
     with open(TEST_EMAILS_PATH, "r", encoding="utf-8") as f:
         scenarios = json.load(f)
 
     if scenario_index < 0 or scenario_index >= len(scenarios):
-        return {"error": "Geçersiz senaryo index'i"}
+        raise HTTPException(status_code=404, detail="Geçersiz senaryo index'i")
 
     scenario = scenarios[scenario_index]
 
     # Test panelinde domain kontrolü atlanır - hangi şirket için test edildiği
     # doğrudan parametre olarak belirtilir (gerçek IMAP akışında bu, domain'den bulunur)
-    from app.models import Company
     company = db.query(Company).filter(Company.id == company_id).first()
     if company is None:
-        return {"error": "Geçersiz company_id"}
+        raise HTTPException(status_code=404, detail="Şirket bulunamadı")
 
     email_data = {
         "message_id": make_msgid(),

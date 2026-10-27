@@ -4,11 +4,12 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-
-const TEST_COMPANY_ID = "4d3ef371-7d0e-4111-91d0-aa8ffe7e0188";
+import { apiFetch, errorMessage } from "@/lib/api";
+import { useCompany } from "@/lib/company-context";
 
 export default function UploadPage() {
   const router = useRouter();
+  const { selected, loading: companyLoading } = useCompany();
   const [file, setFile] = useState<File | null>(null);
   const [quality, setQuality] = useState<string>("clean");
   const [uploading, setUploading] = useState(false);
@@ -17,46 +18,43 @@ export default function UploadPage() {
   const isPdf = file?.name.toLowerCase().endsWith(".pdf");
 
   const handleUpload = async () => {
-    if (!file) return;
+    if (!file || !selected) return;
 
     setUploading(true);
     setError(null);
 
     const formData = new FormData();
     formData.append("file", file);
-    formData.append("company_id", TEST_COMPANY_ID);
+    formData.append("company_id", selected.id);
     if (!isPdf) {
       formData.append("document_quality", quality);
     }
 
     try {
-      const res = await fetch("http://localhost:8000/documents/upload", {
-        method: "POST",
-        body: formData,
-      });
-
-      if (!res.ok) {
-        const data = await res.json();
-        throw new Error(data.detail || "Yükleme başarısız oldu");
-      }
-
+      await apiFetch("/documents/upload", { method: "POST", body: formData });
       router.push("/documents");
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Beklenmeyen bir hata oluştu");
+      setError(errorMessage(err));
     } finally {
       setUploading(false);
     }
   };
 
   return (
-    <div className="min-h-screen bg-slate-100 p-8">
+    <div className="min-h-screen bg-slate-100 p-4 md:p-8">
       <h1 className="mb-6 text-2xl font-bold">Yeni Belge Yükle</h1>
 
       <Card className="max-w-md">
         <CardHeader>
-          <CardTitle className="text-base">Belge Seç</CardTitle>
+          <CardTitle className="text-base">
+            Belge Seç{selected ? ` — ${selected.name}` : ""}
+          </CardTitle>
         </CardHeader>
         <CardContent className="flex flex-col gap-4">
+          {!companyLoading && !selected && (
+            <p className="text-sm text-amber-700">Yükleme için önce sağ üstten bir şirket seçin.</p>
+          )}
+
           <input
             type="file"
             accept=".jpg,.jpeg,.png,.pdf"
@@ -84,11 +82,9 @@ export default function UploadPage() {
             </p>
           )}
 
-          {error && (
-            <p className="text-sm text-red-600">{error}</p>
-          )}
+          {error && <p className="text-sm text-red-600">{error}</p>}
 
-          <Button onClick={handleUpload} disabled={!file || uploading}>
+          <Button onClick={handleUpload} disabled={!file || !selected || uploading}>
             {uploading ? "Yükleniyor..." : "Yükle"}
           </Button>
         </CardContent>

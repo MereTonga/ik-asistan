@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { CompanySelect } from "@/components/company-select";
 
 const NAV_ITEMS = [
   { label: "Ana Sayfa", href: "/" },
@@ -14,8 +15,8 @@ export function Navbar() {
   const pathname = usePathname();
 
   return (
-    <nav className="border-b border-slate-200 bg-white px-8 py-4">
-      <div className="flex items-center gap-6">
+    <nav className="border-b border-slate-200 bg-white px-4 py-4 md:px-8">
+      <div className="flex flex-wrap items-center gap-6">
         <Link href="/" className="font-bold">
           İK Asistanı
         </Link>
@@ -37,6 +38,9 @@ export function Navbar() {
             </Link>
           );
         })}
+        <div className="ml-auto">
+          <CompanySelect />
+        </div>
       </div>
     </nav>
   );

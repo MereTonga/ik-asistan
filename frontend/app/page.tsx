@@ -3,13 +3,13 @@
 import { useEffect, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { apiFetch } from "@/lib/api";
 
 export default function Home() {
   const [status, setStatus] = useState<string>("Kontrol ediliyor...");
 
   useEffect(() => {
-    fetch("http://localhost:8000/health")
-      .then((res) => res.json())
+    apiFetch<{ status: string }>("/health")
       .then((data) => setStatus(data.status))
       .catch(() => setStatus("Bağlantı hatası"));
   }, []);

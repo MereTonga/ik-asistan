@@ -75,7 +75,11 @@ services:
         condition: service_completed_successfully
 
   frontend:
-    build: ./frontend
+    build:
+      context: ./frontend
+      args:
+        # Tarayicinin API adresi (build sirasinda gomulur); .env'de NEXT_PUBLIC_API_URL ile degistirilebilir
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:8000}
     ports:
       - "127.0.0.1:3000:3000"
     depends_on:
