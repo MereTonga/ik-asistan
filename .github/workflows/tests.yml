@@ -1,4 +1,4 @@
-name: Backend Testleri
+name: CI
 
 on:
   push:
@@ -7,7 +7,8 @@ on:
     branches: [main]
 
 jobs:
-  test:
+  backend:
+    name: Backend testleri
     runs-on: ubuntu-latest
 
     services:
@@ -59,6 +60,8 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+          cache: pip
+          cache-dependency-path: backend/requirements.txt
 
       - name: Bağımlılıkları kur
         run: pip install -r backend/requirements.txt
@@ -73,4 +76,110 @@ jobs:
 
       - name: Testleri çalıştır
         working-directory: backend
-        run: pytest tests/ -v --cov=app --cov-report=term-missing
+        run: pytest -v --cov=app --cov-report=term-missing
+
+  frontend:
+    name: Frontend lint ve build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Kodu indir
+        uses: actions/checkout@v4
+
+      - name: Node kur
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Bağımlılıkları kur
+        working-directory: frontend
+        run: npm ci
+
+      - name: Lint
+        working-directory: frontend
+        run: npm run lint
+
+      - name: Build
+        working-directory: frontend
+        run: npm run build
+
+  docker-smoke:
+    name: Docker Compose smoke
+    runs-on: ubuntu-latest
+    steps:
+      - name: Kodu indir
+        uses: actions/checkout@v4
+
+      - name: CI icin .env olustur
+        run: |
+          cat > .env <<'EOF'
+          DATABASE_URL=postgresql://ik_asistan:ci_password@localhost:5432/ik_asistan_db
+          TEST_DATABASE_URL=postgresql://ik_asistan:ci_password@localhost:5432/ik_asistan_test_db
+          REDIS_URL=redis://:ci_redis_password@localhost:6379/0
+          POSTGRES_PASSWORD=ci_password
+          REDIS_PASSWORD=ci_redis_password
+          OLLAMA_BASE_URL=http://host.docker.internal:11434
+          LLM_MODEL=qwen3.5:9b
+          VL_MODEL=qwen3-vl:8b
+          OCR_MODEL=glm-ocr
+          EMBEDDING_MODEL=qwen3-embedding:0.6b
+          EMAIL_ADDRESS=test@example.com
+          EMAIL_APP_PASSWORD=dummy-password-for-ci
+          IMAP_SERVER=imap.example.com
+          SMTP_SERVER=smtp.example.com
+          EMAIL_DRY_RUN=true
+          EMAIL_POLL_INTERVAL_SECONDS=3600
+          LOG_LEVEL=INFO
+          EOF
+
+      - name: Imajlari kur ve yigini kaldir
+        run: docker compose up -d --build
+
+      - name: API saglik kontrolu
+        run: |
+          for i in $(seq 1 60); do
+            if curl -fsS http://127.0.0.1:8000/health; then echo; exit 0; fi
+            sleep 3
+          done
+          echo "API 180 saniyede hazir olmadi"; docker compose ps; docker compose logs --tail=100; exit 1
+
+      - name: Endpoint ve frontend kontrolu
+        run: |
+          curl -fsS http://127.0.0.1:8000/companies
+          curl -fsS -o /dev/null -w 'frontend HTTP %{http_code}\n' http://127.0.0.1:3000
+          docker compose ps --format '{{.Name}}\t{{.Status}}'
+          docker compose logs migrate | grep -E "Running upgrade|head" || true
+
+      - name: Yigini indir
+        if: always()
+        run: docker compose down -v
+
+  audit:
+    name: Bagimlilik taramasi (uyari modu)
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - name: Kodu indir
+        uses: actions/checkout@v4
+
+      - name: Python kur
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: pip-audit
+        run: |
+          pip install pip-audit
+          pip-audit -r backend/requirements.txt
+
+      - name: Node kur
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: npm audit (uretim bagimliliklari)
+        working-directory: frontend
+        run: |
+          npm ci
+          npm audit --omit=dev --audit-level=high
