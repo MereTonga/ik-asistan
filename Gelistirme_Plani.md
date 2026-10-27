@@ -106,10 +106,11 @@ bash stop_dev.sh          # aktif görev kontrolü + durdur + doğrula
 | 14 | Denetim sonrası Paket 2/B: e-posta hattı dayanıklılığı | ✅ Tamamlandı (27 Ekim 2026) |
 | 15 | Denetim sonrası Paket 2/C: şema (timestamptz, isimli kısıtlar, skor alanları), Celery ayarları, verdict parse | ✅ Tamamlandı (27 Ekim 2026) |
 | 16 | Paket 3/A: prompt sertleştirme, indeksler, seed, veri saklama | ✅ Tamamlandı (27 Ekim 2026) |
-| 17 | Paket 3/B: belge emekliye ayırma/silme, İK bildirimi | ⏳ Sırada |
-| 18 | Paket 3/C: thread memory | ⏳ Sırada |
-| 19 | Paket 3/D: bağımlılıklar, imajlar, CI | ⏳ Sırada |
-| 20 | Paket 4: dokümantasyon | ⏳ Sırada |
+| 17 | Paket 3/B: OCR sağlık kontrolü, belge emekliye ayırma/silme, İK bildirimi | ✅ Tamamlandı (27 Ekim 2026) |
+| 18 | Paket 3/C: "kime ne cevap" modeli (belge görünürlüğü, yetkili gönderenler, varsayılan şirket) | ⏳ Sırada |
+| 19 | Paket 3/D: thread memory | ⏳ Sırada |
+| 20 | Paket 3/E: bağımlılıklar, imajlar, CI | ⏳ Sırada |
+| 21 | Paket 4: dokümantasyon | ⏳ Sırada |
 | — | Genel değerlendirme + README + dokümantasyon kapanışı | ✅ Tamamlandı — **proje kapatıldı** |
 
 ---
@@ -490,6 +491,23 @@ search → (eşik üstü mü?) → generate_answer → groundedness_check → (d
 
 ---
 
+## FAZ 17 — Paket 3/B (OCR Kontrolü, Belge Silme, İK Bildirimi)
+
+**Faz 16 kontrolünde bulunanlar ve düzeltmeler:** Test paneli şirket değişince eski sonuçları gösteriyordu (düzeltildi, bileşen şirket kimliğiyle yeniden kuruluyor); frontend container'ı eski imajda kalınca `docker ps`'te hash görünüyordu (compose'a açık imaj adları: tek `ik-asistan-backend` + `ik-asistan-frontend`); container'lar UTC'deydi (`TZ=Europe/Istanbul`); eski Honcho panelinin karşılığı olarak `docker_panel.sh` (tmux: worker+beat / api+frontend / psql).
+
+**Yapılanlar:**
+- **17.0 — OCR çıktı sağlık kontrolü.** Yazısız bir fotoğraf yüklendiğinde `glm-ocr` yönergeyi tekrar edip Çince karakterlere kaymıştı ve bu "başarılı OCR" olarak onaya düşüyordu. `assess_ocr_output` dört sezgisel kontrol yapıyor: yönerge yankısı, Çince/Japonca/Korece karakter oranı (>%20), satır tekrarı, sıkıştırma oranıyla kalıp tekrarı (<0,12) ve çok kısa çıktı. Sorun varsa belge `failed` olur, mesaj nedeni ve öneriyi söyler ("diğer kalite seçeneğiyle yeniden işleyin"). PDF yolu etkilenmez.
+- **17.1 — Emekliye ayırma ve silme.** `POST /documents/{id}/retire`: chunk'lar silinir, kayıt ve metin kalır (`retired`), `rechunk` ile yeniden etkinleştirilir. `DELETE /documents/{id}`: chunk'lar, diskteki dosya ve kayıt kalıcı silinir; `processing`/`indexing` sırasında 409. Panelde "Emekliye ayır", "Yeniden etkinleştir" ve iki adımlı "Sil"; listede "Emekli" filtresi.
+- **17.2 — İK bildirimi (isteğe bağlı).** `companies.hr_notify_email` (migration) + `.env` `HR_NOTIFY_EMAIL` genel adresi. Yönlendirmede, adres varsa ve botun kendi kutusu değilse `[İK Asistanı] Yönlendirilen soru: ...` maili gider: çalışanın adresi, sorusu, yönlendirme nedeni; `Reply-To` çalışan, `Auto-Submitted: auto-generated`. Simülasyonda ve cevaplanan maillerde gönderilmez; bildirim hatası ana akışı bozmaz. `POST /companies/add` yeni alanı alıyor, `PATCH /companies/{id}` (JSON) ad ve adres güncelliyor.
+
+**Tasarım notu (kullanıcının sorusundan):** Bot ve gerçek İK aynı kutuyu kullanıyorsa ayrı bildirim kopya üretir; bu durumda Faz 14'teki yıldız yeterlidir, bildirim yalnızca İK'nın farklı adresi varsa anlamlıdır. Gerçek İK'nın aynı kutudan yazdığı cevaplar bot tarafından görülmez (`hr_staff` mesaj tipi hiç dolmuyor) — bilinen sınırlama olarak kaldı.
+
+**Test:** 141 test (Faz 16 sonunda 121).
+
+**Faz 17 tamamlandı.**
+
+---
+
 ## Bilinen Sınırlamalar (Genel Özet)
 
 Proje boyunca bulunan, bilinçli olarak MVP kapsamı dışında bırakılan noktaların toplu listesi (detaylar ilgili faz bölümlerinde):
@@ -566,7 +584,7 @@ Bu projede bilinçli olarak kapsam dışı bırakılan, ayrı/daha sade projeler
 
 ## Şu Anki Durum / Devam Noktası
 
-**Tamamlanan:** Faz 0-10'un tamamı + Groundedness Check + CI; Ekim 2026'da denetim, Faz 11 (Paket 0), Faz 12 (Paket 1), Faz 13-15 (Paket 2), Faz 16 (Paket 3/A). Sıradaki: Faz 17 (belge emekliye ayırma/silme, `hr_notify_email`), Faz 18 (thread memory), Faz 19 (bağımlılıklar, imajlar, CI), Faz 20 (Paket 4 dokümantasyon). Kimlik doğrulama bilinçli olarak kapsam dışı bırakıldı.
+**Tamamlanan:** Faz 0-10'un tamamı + Groundedness Check + CI; Ekim 2026'da denetim, Faz 11 (Paket 0), Faz 12 (Paket 1), Faz 13-15 (Paket 2), Faz 16-17 (Paket 3/A-B). Sıradaki: Faz 18 ("kime ne cevap" modeli: belge görünürlüğü internal/public, yetkili gönderen listesi, `DEFAULT_COMPANY_DOMAIN`, dış gönderen işareti), Faz 19 (thread memory), Faz 20 (bağımlılıklar, imajlar, CI), Faz 21 (Paket 4 dokümantasyon). Kimlik doğrulama bilinçli olarak kapsam dışı bırakıldı.
 **Kapsam dışı bırakılan (bilinçli karar):** Kimlik doğrulama, gerçek sunucuya deploy, PostgreSQL RLS, global exception handler — hepsi "Bilinen Sınırlamalar" listesinde gerekçeleriyle kayıtlı.
 
 **Projeye yeni bakan biri için giriş noktası:** `README.md` (kurulum + kullanım), ardından `Proje_Dokumantasyonu.md` (mimari gerekçeler), ardından bu dosya (uygulama geçmişi ve alınan kararlar).

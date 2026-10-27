@@ -221,7 +221,7 @@ EMAIL_POLL_INTERVAL_SECONDS=300
 LOG_LEVEL=INFO
 ```
 
-İsteğe bağlı ayarlar (varsayılanları `backend/app/config.py` içinde): `MAX_UPLOAD_MB` (20), `EMAIL_MAX_REPLIES_PER_SENDER_PER_HOUR` (5), `EMAIL_SKIP_MEMORY_DAYS` (30), `THREAD_MATCH_WINDOW_DAYS` (30), `THREAD_RESOLVE_AFTER_DAYS` (14), `THREAD_RETENTION_DAYS` (0 = kapalı; >0 ise bu kadar günden eski yazışmalar her gece silinir), `TASK_SOFT_TIME_LIMIT_SECONDS` (1800), `NEXT_PUBLIC_API_URL` (frontend build-arg, `http://localhost:8000`), `TZ` (container'ların log/zamanlama saat dilimi, `Europe/Istanbul`; veritabanı her zaman UTC saklar, panel tarayıcının saat dilimini gösterir).
+İsteğe bağlı ayarlar (varsayılanları `backend/app/config.py` içinde): `HR_NOTIFY_EMAIL` (boş), `MAX_UPLOAD_MB` (20), `EMAIL_MAX_REPLIES_PER_SENDER_PER_HOUR` (5), `EMAIL_SKIP_MEMORY_DAYS` (30), `THREAD_MATCH_WINDOW_DAYS` (30), `THREAD_RESOLVE_AFTER_DAYS` (14), `THREAD_RETENTION_DAYS` (0 = kapalı; >0 ise bu kadar günden eski yazışmalar her gece silinir), `TASK_SOFT_TIME_LIMIT_SECONDS` (1800), `NEXT_PUBLIC_API_URL` (frontend build-arg, `http://localhost:8000`), `TZ` (container'ların log/zamanlama saat dilimi, `Europe/Istanbul`; veritabanı her zaman UTC saklar, panel tarayıcının saat dilimini gösterir).
 
 > **Ağ notu:** Compose, tüm portları (`5432`, `6379`, `8000`, `3000`) yalnızca `127.0.0.1`'e bağlar; servisler aynı makineden `localhost` ile erişilir, yerel ağdaki diğer cihazlara açılmaz. Redis parola ister, Postgres parolası ve Redis parolası `.env`'den gelir. **Mevcut bir `pgdata` volume'unda `POSTGRES_PASSWORD` değerini değiştirmek parolayı değiştirmez** (parola ilk kurulumda belirlenir); değiştirmek için `ALTER USER ik_asistan PASSWORD '...'` çalıştırın ya da `docker compose down -v` ile sıfırdan kurun.
 
@@ -280,7 +280,13 @@ docker compose exec postgres psql -U ik_asistan -d ik_asistan_db -c \
    VALUES (gen_random_uuid(), 'Örnek Şirket', 'ornek-sirket.com', now()) RETURNING id;"
 ```
 
-Aynı işi API ile de yapabilirsiniz: `POST /companies/add` (form alanları `name`, `email_domain`). Panel, kayıtlı şirketleri sağ üstteki **şirket seçici**den okur; seçim tarayıcıda hatırlanır ve yükleme, test paneli, analitik bu seçime göre çalışır.
+Aynı işi API ile de yapabilirsiniz: `POST /companies/add` (form alanları `name`, `email_domain`, isteğe bağlı `hr_notify_email`). Panel, kayıtlı şirketleri sağ üstteki **şirket seçici**den okur; seçim tarayıcıda hatırlanır ve yükleme, test paneli, analitik bu seçime göre çalışır.
+
+**İK bildirimi (isteğe bağlı):** Bot ve İK aynı gelen kutusunu kullanıyorsa yönlendirilen sorular o kutuda yıldızlı görünür, ek bir şey gerekmez. İK'nın **ayrı** bir adresi varsa şirkete `hr_notify_email` verin; her yönlendirmede çalışanın sorusu bu adrese iletilir ve maildeki `Reply-To` çalışanın adresi olur, İK "Yanıtla" ile doğrudan çalışana yazar. Tüm şirketler için ortak bir adres `.env`'de `HR_NOTIFY_EMAIL` ile verilebilir. Güncellemek için:
+
+```bash
+curl -X PATCH http://localhost:8000/companies/<id> -H 'Content-Type: application/json' -d '{"hr_notify_email": "ik.muduru@sirket.com"}'
+```
 
 > `email_domain`, gelen e-postanın hangi şirkete ait olduğunu belirler. Örneğin `ahmet@ornek-sirket.com` adresinden gelen bir mail, bu şirkete eşleşir.
 
@@ -305,7 +311,8 @@ Komut `backend/seed/*.md` dosyalarını belge olarak yükler, chunk'lar ve embed
 5. Listeden belgeye tıklayın → **solda orijinal görsel, sağda çıkarılan metin**
 6. Metinde hata varsa **düzeltin ve "Kaydet"** deyin
 7. Doğru olduğundan emin olduğunuzda **"Onayla"** → belge **İndeksleniyor** durumuna geçer, metin parçalanır, vektörleştirilir ve **Onaylı** olur
-8. İşleme başarısız olursa belge **Hatalı** durumuna düşer ve hata mesajı görünür; **"Yeniden işle"** ile tekrar denenir. Onaylı bir belgeyi güncel parçalama yöntemiyle yeniden indekslemek için **"Yeniden parçala"** kullanılır.
+8. İşleme başarısız olursa belge **Hatalı** durumuna düşer ve hata mesajı görünür; **"Yeniden işle"** ile tekrar denenir. Yazısız ya da çok bozuk bir görselde OCR modeli saçmalayabilir (yönergeyi tekrar etmek, Çince karakterler, aşırı tekrar); sistem bunu tanır ve belgeyi onaya sunmak yerine Hatalı yapar. Onaylı bir belgeyi güncel parçalama yöntemiyle yeniden indekslemek için **"Yeniden parçala"** kullanılır.
+9. Onaylı bir belgeyi aramadan çıkarmak için **"Emekliye ayır"** (metin saklanır, **"Yeniden etkinleştir"** ile geri gelir); belgeyi parçaları ve dosyasıyla birlikte kalıcı olarak kaldırmak için **"Sil"** (iki adımlı onay). İşleme sürerken silinemez.
 
 Yükleme sınırları: yalnızca `.pdf`, `.jpg`, `.jpeg`, `.png`; dosya içeriği uzantısıyla uyuşmalı; üst boyut `MAX_UPLOAD_MB` (varsayılan 20 MB).
 
@@ -393,7 +400,7 @@ Bu proje bilinçli olarak sınırlı bir kapsamda tutulmuştur. En önemlileri:
 - Sistem, gelen mailin **niyetini** sınıflandırmaz — her maili bir İK sorusu varsayar (iş başvurusu, spam vb. ayırt edilmez). Yalnızca oto-yanıt, teslim raporu, liste ve sistem adresi mailleri başlıklarından tanınıp elenir.
 - Alıntı temizleme (yanıtlardaki eski mail bloklarını ayıklama) regex tabanlı, %100 kapsayıcı değil.
 - Gönderenin `From` başlığı doğrulanmaz (SPF/DKIM sonuçları okunmaz); sahte `From` ile bot tetiklenebilir, cevap sahte adrese gider.
-- "İK'ya ilettim" cevabı şimdilik yalnızca gelen kutusundaki yıldız işaretine karşılık gelir; İK'ya ayrıca bildirim gönderilmez.
+- "İK'ya ilettim" cevabı, gelen kutusundaki yıldız işareti ve (ayarlıysa) `hr_notify_email` bildirimi anlamına gelir. Gerçek İK aynı kutudan çalışana cevap yazarsa bot bunu görmez; çalışanın sonraki takip sorusunu yine kendisi cevaplamaya çalışır.
 - Sadece Gmail + App Password test edildi; OAuth2 ve Outlook/Exchange kurumsal IMAP denenmedi.
 
 **RAG Kalitesi**
