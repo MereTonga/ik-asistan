@@ -30,6 +30,7 @@ const FILTERS: { label: string; value: string | null }[] = [
   { label: "İndeksleniyor", value: "indexing" },
   { label: "Hatalı", value: "failed" },
   { label: "Onaylı", value: "approved" },
+  { label: "Emekli", value: "retired" },
 ];
 
 export default function DocumentsPage() {

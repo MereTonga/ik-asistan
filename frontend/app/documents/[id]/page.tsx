@@ -34,6 +34,7 @@ export default function DocumentDetailPage() {
   const [busyAction, setBusyAction] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [info, setInfo] = useState<string | null>(null);
+  const [confirmDelete, setConfirmDelete] = useState(false);
 
   // reloadTick her arttığında belge sunucudan yeniden okunur (ilk yükleme, periyodik yenileme, işlem sonrası).
   const [reloadTick, setReloadTick] = useState(0);
@@ -116,6 +117,22 @@ export default function DocumentDetailPage() {
 
   const handleRechunk = () =>
     runAction("rechunk", () => apiFetch(`/documents/${id}/rechunk`, { method: "POST" }), "Yeniden parçalama kuyruğa alındı.");
+
+  const handleRetire = () =>
+    runAction("retire", () => apiFetch(`/documents/${id}/retire`, { method: "POST" }), "Belge aramadan çıkarıldı; 'Yeniden etkinleştir' ile geri alınabilir.");
+
+  const handleDelete = async () => {
+    setBusyAction("delete");
+    setActionError(null);
+    try {
+      await apiFetch(`/documents/${id}`, { method: "DELETE" });
+      router.push("/documents");
+    } catch (err) {
+      setActionError(errorMessage(err));
+      setBusyAction(null);
+      setConfirmDelete(false);
+    }
+  };
 
   if (loadError && !doc) {
     return (
@@ -223,11 +240,40 @@ export default function DocumentDetailPage() {
           </Button>
         )}
         {doc.status === "approved" && (
-          <Button variant="outline" onClick={handleRechunk} disabled={busyAction !== null}>
-            {busyAction === "rechunk" ? "Kuyruğa alınıyor..." : "Yeniden parçala"}
+          <>
+            <Button variant="outline" onClick={handleRechunk} disabled={busyAction !== null}>
+              {busyAction === "rechunk" ? "Kuyruğa alınıyor..." : "Yeniden parçala"}
+            </Button>
+            <Button variant="outline" onClick={handleRetire} disabled={busyAction !== null}>
+              {busyAction === "retire" ? "Çıkarılıyor..." : "Emekliye ayır"}
+            </Button>
+          </>
+        )}
+        {doc.status === "retired" && (
+          <Button onClick={handleRechunk} disabled={busyAction !== null}>
+            {busyAction === "rechunk" ? "Kuyruğa alınıyor..." : "Yeniden etkinleştir"}
           </Button>
         )}
+        {!isBusy && !confirmDelete && (
+          <Button variant="destructive" onClick={() => setConfirmDelete(true)} disabled={busyAction !== null}>
+            Sil
+          </Button>
+        )}
+        {!isBusy && confirmDelete && (
+          <div className="flex flex-wrap items-center gap-2 rounded border border-red-200 bg-red-50 p-2 text-sm">
+            <span className="text-red-700">Belge, parçaları ve dosyası kalıcı olarak silinecek. Emin misin?</span>
+            <Button variant="destructive" onClick={handleDelete} disabled={busyAction !== null}>
+              {busyAction === "delete" ? "Siliniyor..." : "Evet, sil"}
+            </Button>
+            <Button variant="outline" onClick={() => setConfirmDelete(false)} disabled={busyAction !== null}>
+              Vazgeç
+            </Button>
+          </div>
+        )}
       </div>
+      {doc.status === "retired" && (
+        <p className="mt-2 text-sm text-slate-500">Emekli belge aramada kullanılmaz; metni saklanır.</p>
+      )}
       {canEdit && textIsEmpty && (
         <p className="mt-2 text-sm text-amber-700">Metin boşken onaylanamaz; metni düzenleyin ya da belgeyi yeniden işleyin.</p>
       )}

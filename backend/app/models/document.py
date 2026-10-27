@@ -16,15 +16,19 @@ class DocumentStatus:
     upload → PROCESSING → (worker) → PENDING_APPROVAL | FAILED
     PENDING_APPROVAL → (onay) → INDEXING → (worker) → APPROVED | PENDING_APPROVAL (hata)
     APPROVED → (yeniden parçala) → INDEXING → APPROVED
+    APPROVED → (emekliye ayır) → RETIRED → (yeniden etkinleştir) → INDEXING → APPROVED
     FAILED | PENDING_APPROVAL → (yeniden işle) → PROCESSING
+    Her durumdan (PROCESSING/INDEXING hariç) → DELETE: chunk'lar, dosya ve kayıt kalıcı silinir
     """
     PROCESSING = "processing"            # OCR / PDF çıkarımı sürüyor
     PENDING_APPROVAL = "pending_approval"  # metin hazır, insan onayı bekliyor
     FAILED = "failed"                    # çıkarım başarısız, error_message dolu
     INDEXING = "indexing"                # chunk + embedding üretiliyor
     APPROVED = "approved"                # aramaya açık
+    RETIRED = "retired"                  # aramadan çıkarıldı, kayıt ve metin duruyor (chunk'lar silindi)
 
-    ALL = (PROCESSING, PENDING_APPROVAL, FAILED, INDEXING, APPROVED)
+    ALL = (PROCESSING, PENDING_APPROVAL, FAILED, INDEXING, APPROVED, RETIRED)
+    BUSY = (PROCESSING, INDEXING)        # worker üzerinde çalışıyor; silinemez
 
 
 class Document(Base):

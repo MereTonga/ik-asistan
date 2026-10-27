@@ -326,3 +326,82 @@ def test_upload_rejects_oversized_file_and_removes_partial(mock_task, monkeypatc
     assert response.status_code == 413
     mock_task.delay.assert_not_called()
     assert list(upload_dir.iterdir()) == []
+
+
+# --- Faz 17.1: emekliye ayırma ve silme ---------------------------------------
+
+def _add_chunks(db_session, doc, company, n=2):
+    from app.models import DocumentChunk
+
+    for i in range(n):
+        db_session.add(DocumentChunk(document_id=doc.id, company_id=company.id, chunk_text=f"chunk {i} metni", embedding=[0.0] * 1024))
+    db_session.flush()
+
+
+def _chunk_count(db_session, doc_id):
+    from app.models import DocumentChunk
+
+    return db_session.query(DocumentChunk).filter(DocumentChunk.document_id == doc_id).count()
+
+
+def test_retire_removes_chunks_and_keeps_record(client, db_session, test_company):
+    doc = _make_document(db_session, test_company, status=DocumentStatus.APPROVED)
+    _add_chunks(db_session, doc, test_company)
+
+    response = client.post(f"/documents/{doc.id}/retire")
+
+    assert response.status_code == 200
+    db_session.refresh(doc)
+    assert doc.status == DocumentStatus.RETIRED
+    assert doc.raw_extracted_text == "test metni"
+    assert _chunk_count(db_session, doc.id) == 0
+
+
+def test_retire_rejects_non_approved(client, db_session, test_company):
+    doc = _make_document(db_session, test_company)  # pending_approval
+
+    assert client.post(f"/documents/{doc.id}/retire").status_code == 409
+
+
+@patch("app.api.documents.rechunk_document_task")
+def test_retired_document_can_be_reactivated_via_rechunk(mock_task, client, db_session, test_company):
+    doc = _make_document(db_session, test_company, status=DocumentStatus.RETIRED)
+
+    response = client.post(f"/documents/{doc.id}/rechunk")
+
+    assert response.status_code == 200
+    mock_task.delay.assert_called_once_with(str(doc.id))
+    db_session.refresh(doc)
+    assert doc.status == DocumentStatus.INDEXING
+
+
+def test_delete_removes_record_chunks_and_file(client, db_session, test_company, upload_dir):
+    doc = _make_document(db_session, test_company, status=DocumentStatus.APPROVED, stored_filename="silinecek.png")
+    _add_chunks(db_session, doc, test_company)
+    file_path = upload_dir / "silinecek.png"
+    file_path.write_bytes(PNG_HEADER)
+    doc_id = doc.id
+
+    response = client.delete(f"/documents/{doc_id}")
+
+    assert response.status_code == 200
+    from app.models import Document
+
+    assert db_session.query(Document).filter(Document.id == doc_id).count() == 0
+    assert _chunk_count(db_session, doc_id) == 0
+    assert not file_path.exists()
+
+
+def test_delete_works_for_failed_document_without_file(client, db_session, test_company, upload_dir):
+    doc = _make_document(db_session, test_company, status=DocumentStatus.FAILED, stored_filename=None, raw_extracted_text=None)
+
+    assert client.delete(f"/documents/{doc.id}").status_code == 200
+    assert client.get(f"/documents/{doc.id}").status_code == 404
+
+
+def test_delete_rejects_busy_document(client, db_session, test_company, upload_dir):
+    processing = _make_document(db_session, test_company, status=DocumentStatus.PROCESSING, raw_extracted_text=None)
+    indexing = _make_document(db_session, test_company, status=DocumentStatus.INDEXING)
+
+    assert client.delete(f"/documents/{processing.id}").status_code == 409
+    assert client.delete(f"/documents/{indexing.id}").status_code == 409

@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 
 from app.config import UPLOAD_DIR, settings
 from app.db.session import get_db
-from app.models import Company, Document
+from app.models import Company, Document, DocumentChunk
 from app.models.document import DocumentStatus
 from app.tasks.document_tasks import (
     approve_document_task,
@@ -176,10 +176,10 @@ def reprocess_document(document_id: str, db: Session = Depends(get_db)):
 
 @router.post("/{document_id}/rechunk")
 def rechunk_document(document_id: str, db: Session = Depends(get_db)):
-    """Onaylı belgeyi güncel chunk'lama yöntemiyle yeniden indeksler."""
+    """Onaylı belgeyi güncel chunk'lama yöntemiyle yeniden indeksler; emekli belgeyi yeniden etkinleştirir."""
     document = _get_document_or_404(document_id, db)
-    if document.status != DocumentStatus.APPROVED:
-        raise HTTPException(status_code=409, detail=f"Yalnızca onaylı dokümanlar yeniden parçalanabilir (durum: {document.status})")
+    if document.status not in (DocumentStatus.APPROVED, DocumentStatus.RETIRED):
+        raise HTTPException(status_code=409, detail=f"Yalnızca onaylı ya da emekli dokümanlar yeniden parçalanabilir (durum: {document.status})")
 
     document.status = DocumentStatus.INDEXING
     document.error_message = None
@@ -188,6 +188,44 @@ def rechunk_document(document_id: str, db: Session = Depends(get_db)):
     rechunk_document_task.delay(document_id)
 
     return {"id": document_id, "status": document.status, "message": "Yeniden parçalama kuyruğa alındı."}
+
+
+@router.post("/{document_id}/retire")
+def retire_document(document_id: str, db: Session = Depends(get_db)):
+    """Onaylı belgeyi aramadan çıkarır: chunk'lar silinir, kayıt ve metin kalır (denetim izi).
+    'Yeniden parçala' ile tekrar etkinleştirilebilir."""
+    document = _get_document_or_404(document_id, db)
+    if document.status != DocumentStatus.APPROVED:
+        raise HTTPException(status_code=409, detail=f"Yalnızca onaylı dokümanlar emekliye ayrılabilir (durum: {document.status})")
+
+    db.query(DocumentChunk).filter(DocumentChunk.document_id == document.id).delete()
+    document.status = DocumentStatus.RETIRED
+    document.error_message = None
+    db.commit()
+
+    return {"id": document_id, "status": document.status, "message": "Belge aramadan çıkarıldı."}
+
+
+@router.delete("/{document_id}")
+def delete_document(document_id: str, db: Session = Depends(get_db)):
+    """Belgeyi kalıcı olarak siler: chunk'lar, diskteki dosya ve kayıt. İşleme sürerken silinemez."""
+    document = _get_document_or_404(document_id, db)
+    if document.status in DocumentStatus.BUSY:
+        raise HTTPException(status_code=409, detail=f"İşleme sürerken silinemez (durum: {document.status}); bitmesini bekleyin")
+
+    db.query(DocumentChunk).filter(DocumentChunk.document_id == document.id).delete()
+    stored_filename = document.stored_filename
+    db.delete(document)
+    db.commit()
+
+    if stored_filename:
+        file_path = os.path.join(UPLOAD_DIR, stored_filename)
+        try:
+            os.remove(file_path)
+        except FileNotFoundError:
+            pass
+
+    return {"id": document_id, "message": "Belge, parçaları ve dosyası kalıcı olarak silindi."}
 
 
 @router.get("")

@@ -5,6 +5,7 @@ export const STATUS_LABELS: Record<string, string> = {
   failed: "Hatalı",
   indexing: "İndeksleniyor",
   approved: "Onaylı",
+  retired: "Emekli",
 };
 
 export const SOURCE_LABELS: Record<string, string> = {
@@ -12,6 +13,7 @@ export const SOURCE_LABELS: Record<string, string> = {
   pdf_text: "PDF metin",
   ocr_clean: "OCR (temiz)",
   ocr_complex: "OCR (karmaşık)",
+  seed_markdown: "Örnek veri",
 };
 
 // Bu durumlarda worker çalışıyordur; sayfa kendini periyodik olarak yeniler.
