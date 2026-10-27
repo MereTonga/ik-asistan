@@ -1,6 +1,6 @@
 import uuid
 from datetime import datetime, timezone
-from sqlalchemy import Column, String, DateTime, ForeignKey, Text, Boolean, Float
+from sqlalchemy import Column, String, DateTime, ForeignKey, Index, Text, Boolean, Float
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
 
@@ -15,6 +15,7 @@ class ThreadStatus:
 
 class EmailThread(Base):
     __tablename__ = "email_threads"
+    __table_args__ = (Index("ix_email_threads_company_id", "company_id"),)
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     company_id = Column(UUID(as_uuid=True), ForeignKey("companies.id"), nullable=False)
@@ -36,6 +37,7 @@ class EmailThread(Base):
 
 class Message(Base):
     __tablename__ = "messages"
+    __table_args__ = (Index("ix_messages_thread_id", "thread_id"),)
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     thread_id = Column(UUID(as_uuid=True), ForeignKey("email_threads.id"), nullable=False)

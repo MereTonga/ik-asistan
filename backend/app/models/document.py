@@ -1,6 +1,6 @@
 import uuid
 from datetime import datetime, timezone
-from sqlalchemy import Column, String, DateTime, ForeignKey, Text
+from sqlalchemy import Column, String, DateTime, ForeignKey, Index, Text
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
 from pgvector.sqlalchemy import Vector
@@ -29,6 +29,7 @@ class DocumentStatus:
 
 class Document(Base):
     __tablename__ = "documents"
+    __table_args__ = (Index("ix_documents_company_id", "company_id"),)
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     company_id = Column(UUID(as_uuid=True), ForeignKey("companies.id"), nullable=False)
@@ -52,6 +53,17 @@ class Document(Base):
 
 class DocumentChunk(Base):
     __tablename__ = "document_chunks"
+    __table_args__ = (
+        Index("ix_document_chunks_company_id", "company_id"),
+        # Kosinüs araması için yaklaşık en-yakın-komşu indeksi; küçük veride fark etmez,
+        # chunk sayısı on binleri bulunca sıralı taramayı önler.
+        Index(
+            "ix_document_chunks_embedding",
+            "embedding",
+            postgresql_using="hnsw",
+            postgresql_ops={"embedding": "vector_cosine_ops"},
+        ),
+    )
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     document_id = Column(UUID(as_uuid=True), ForeignKey("documents.id"), nullable=False)
