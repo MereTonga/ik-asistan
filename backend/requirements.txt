@@ -16,11 +16,9 @@ redis==8.1.0
 # --- Yapay Zeka / RAG ---
 ollama==0.6.2
 langgraph==1.2.10
-numpy==2.5.1
 
 # --- Belge İşleme ---
 pdfplumber==0.11.10
-pymupdf==1.28.0
 
 # --- E-posta ---
 imapclient==3.1.0
@@ -32,8 +30,7 @@ pydantic-settings==2.15.0
 # --- Test ---
 pytest==9.1.1
 pytest-cov==7.1.0
-httpx==0.28.1
-httpx2==2.12.0
+httpx2==2.12.0   # starlette TestClient bunu istiyor (httpx ile kullanim deprecated); httpx'i ollama zaten getiriyor
 
 # --- Geliştirme Ortamı Süreç Yönetimi ---
 honcho==2.0.0
