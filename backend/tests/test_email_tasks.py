@@ -445,3 +445,77 @@ def test_check_new_emails_task_accepts_authorized_personal_address(mock_build_gr
     thread = db_session.query(EmailThread).filter(EmailThread.root_message_id_header == "<s1@x>").one()
     assert str(thread.company_id) == str(test_company.id)
     assert thread.is_external is False
+
+
+# --- Faz 18.3: dış gönderenler ------------------------------------------------
+
+@patch("app.tasks.email_tasks.send_reply", return_value="<r-ext1@x>")
+@patch("app.tasks.email_tasks.build_rag_graph")
+def test_external_sender_uses_public_scope_and_marks_thread(mock_build_graph, mock_send_reply, monkeypatch, db_session, test_company):
+    import app.email_service.processor as processor_module
+    from app.tasks.email_tasks import process_single_email
+    from app.models import EmailThread
+
+    seen_states = []
+
+    class Graph:
+        def invoke(self, state):
+            seen_states.append(state)
+            return {**state, "answer": "Genel cevap", "was_escalated": False}
+
+    mock_build_graph.return_value = Graph()
+    monkeypatch.setattr(processor_module.settings, "DEFAULT_COMPANY_DOMAIN", "testcompany.com")
+
+    result = process_single_email(_mail(message_id="<ext1@x>", from_address="aday@outlook.com"), db_session)
+
+    assert result["status"] == "processed"
+    assert seen_states[0]["include_internal"] is False
+    thread = db_session.query(EmailThread).filter(EmailThread.root_message_id_header == "<ext1@x>").one()
+    assert thread.is_external is True
+    assert str(thread.company_id) == str(test_company.id)
+
+
+@patch("app.tasks.email_tasks.send_reply", return_value="<r-int1@x>")
+@patch("app.tasks.email_tasks.build_rag_graph")
+def test_employee_sender_keeps_internal_scope(mock_build_graph, mock_send_reply, monkeypatch, db_session, test_company):
+    import app.email_service.processor as processor_module
+    from app.tasks.email_tasks import process_single_email
+    from app.models import EmailThread
+
+    seen_states = []
+
+    class Graph:
+        def invoke(self, state):
+            seen_states.append(state)
+            return {**state, "answer": "İç cevap", "was_escalated": False}
+
+    mock_build_graph.return_value = Graph()
+    monkeypatch.setattr(processor_module.settings, "DEFAULT_COMPANY_DOMAIN", "testcompany.com")
+
+    process_single_email(_mail(message_id="<int1@x>"), db_session)
+
+    assert seen_states[0]["include_internal"] is True
+    assert db_session.query(EmailThread).filter(EmailThread.root_message_id_header == "<int1@x>").one().is_external is False
+
+
+@patch("app.tasks.email_tasks.send_reply")
+@patch("app.tasks.email_tasks.build_rag_graph")
+def test_check_new_emails_task_routes_unknown_sender_to_default_company(mock_build_graph, mock_send_reply, monkeypatch, fake_redis, db_session, test_session_factory, test_company):
+    import app.email_service.processor as processor_module
+    import app.tasks.email_tasks as tasks_module
+    from app.models import EmailThread
+
+    monkeypatch.setattr(tasks_module, "SessionLocal", test_session_factory)
+    monkeypatch.setattr(processor_module.settings, "DEFAULT_COMPANY_DOMAIN", "testcompany.com")
+    mock_build_graph.return_value = _fake_graph()
+    mock_send_reply.side_effect = _unique_ids()
+    inbox = FakeInbox({1: _raw_mail("<d1@x>", sender="aday@outlook.com")})
+    monkeypatch.setattr(tasks_module, "ImapInbox", lambda: inbox)
+
+    result = tasks_module.check_new_emails_task()
+
+    assert result["processed"] == 1
+    assert inbox.marked == {1: False}
+    assert not fake_redis.exists(tasks_module._skip_key("<d1@x>"))  # atlanmadı
+    db_session.expire_all()
+    assert db_session.query(EmailThread).filter(EmailThread.root_message_id_header == "<d1@x>").one().is_external is True

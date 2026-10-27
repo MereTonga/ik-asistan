@@ -233,3 +233,21 @@ def test_search_node_passes_scope_to_retrieval(mock_search):
 
     search_node({"company_id": "x", "question": "soru"})
     assert mock_search.call_args.kwargs["include_internal"] is True
+
+
+# --- Faz 18.3: dış gönderen notu ----------------------------------------------
+
+@patch("app.rag.graph.client")
+def test_generate_answer_adds_external_note_only_for_external_senders(mock_client):
+    from app.rag.graph import generate_answer_node
+
+    mock_client.chat.return_value = {"message": {"content": "cevap"}}
+    chunks = [{"chunk_text": "c", "is_confident": True}]
+
+    generate_answer_node({"question": "q", "retrieved_chunks": chunks, "include_internal": False})
+    external_prompt = mock_client.chat.call_args.kwargs["messages"][0]["content"]
+    generate_answer_node({"question": "q", "retrieved_chunks": chunks})
+    internal_prompt = mock_client.chat.call_args.kwargs["messages"][0]["content"]
+
+    assert "şirket çalışanı DEĞİL" in external_prompt
+    assert "şirket çalışanı DEĞİL" not in internal_prompt

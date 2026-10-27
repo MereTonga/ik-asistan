@@ -18,6 +18,7 @@ type SimulationResult = {
   reason?: string;
   answer?: string;
   was_escalated?: boolean;
+  external?: boolean; // dışarıdan gelen gibi çalıştırıldı
   error?: string; // istek seviyesinde hata (ağ, 4xx) — UI'da gösterilir
 };
 
@@ -26,12 +27,13 @@ type SimulationResult = {
 function ScenarioRunner({ scenarios, company }: { scenarios: Scenario[]; company: Company }) {
   const [results, setResults] = useState<Record<number, SimulationResult>>({});
   const [loadingIndex, setLoadingIndex] = useState<number | null>(null);
+  const [external, setExternal] = useState(false);
 
   const handleSimulate = async (index: number) => {
     setLoadingIndex(index);
     try {
       const data = await apiFetch<SimulationResult>(
-        `/test/simulate/${index}?company_id=${company.id}`,
+        `/test/simulate/${index}?company_id=${company.id}&external=${external}`,
         { method: "POST" }
       );
       setResults((prev) => ({ ...prev, [index]: data }));
@@ -44,6 +46,13 @@ function ScenarioRunner({ scenarios, company }: { scenarios: Scenario[]; company
 
   return (
     <div className="flex flex-col gap-4">
+      <label className="flex items-start gap-2 rounded border border-slate-200 bg-white p-3 text-sm">
+        <input type="checkbox" checked={external} onChange={(e) => setExternal(e.target.checked)} className="mt-1" />
+        <span>
+          <strong>Dışarıdan gelen gibi çalıştır.</strong> Gönderen şirket çalışanı değilmiş gibi davranılır: yalnızca
+          &quot;Herkese açık&quot; belgeler kullanılır, şirket içi politikalar görünmez.
+        </span>
+      </label>
       {scenarios.map((scenario, index) => {
         const result = results[index];
         return (
@@ -76,6 +85,9 @@ function ScenarioRunner({ scenarios, company }: { scenarios: Scenario[]; company
                       <Badge variant={result.was_escalated ? "destructive" : "default"}>
                         {result.was_escalated ? "Yönlendirildi" : "Cevaplandı"}
                       </Badge>
+                      {result.external && (
+                        <Badge variant="secondary" className="ml-2">dış gönderen</Badge>
+                      )}
                       <p className="mt-2 whitespace-pre-wrap text-sm">{result.answer}</p>
                     </>
                   )}

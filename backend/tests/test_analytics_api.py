@@ -43,3 +43,19 @@ def test_analytics_summary_empty_company(client, test_company):
 
 def test_analytics_summary_rejects_invalid_company_id(client):
     assert client.get("/analytics/summary?company_id=abc").status_code == 422
+
+
+def test_analytics_counts_external_questions(client, db_session, test_company):
+    from app.models import EmailThread, Message
+
+    internal = EmailThread(company_id=test_company.id, subject="iç", employee_email="c@testcompany.com", status="open")
+    external = EmailThread(company_id=test_company.id, subject="dış", employee_email="aday@outlook.com", status="open", is_external=True)
+    db_session.add_all([internal, external])
+    db_session.flush()
+    db_session.add(Message(thread_id=internal.id, message_id_header="<i@x>", sender_type="employee", body="s"))
+    db_session.add(Message(thread_id=external.id, message_id_header="<e@x>", sender_type="employee", body="s"))
+    db_session.flush()
+
+    body = client.get(f"/analytics/summary?company_id={test_company.id}").json()
+    assert body["total_questions"] == 2
+    assert body["external_questions"] == 1

@@ -17,6 +17,7 @@ type Summary = {
   escalation_rate: number;
   avg_confidence_score: number | null; // cevaplarda bulunan en yüksek benzerliklerin ortalaması (eşik kalibrasyonu için)
   grounded_rate: number | null; // groundedness kontrolünden geçen cevap oranı
+  external_questions: number; // dışarıdan yazanların (çalışan olmayan) soruları
   top_escalated_topics: Topic[];
 };
 
@@ -111,7 +112,8 @@ export default function AnalyticsPage() {
       <p className="mb-6 text-xs text-slate-500">
         Ort. Benzerlik: cevaplanan sorularda bulunan en iyi parçanın benzerlik skoru ortalaması; güven eşiğini
         (RAG_CONFIDENCE_THRESHOLD) kalibre etmek için kullanılır. Kaynakla Tutarlı: LLM cevaplarının groundedness
-        kontrolünden geçme oranı.
+        kontrolünden geçme oranı. Toplam sorunun {summary.external_questions} tanesi dışarıdan yazanlardan geldi ve
+        yalnızca herkese açık belgelerle cevaplandı.
       </p>
 
       <Card>

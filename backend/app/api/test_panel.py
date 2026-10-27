@@ -23,7 +23,8 @@ def get_test_scenarios():
 
 
 @router.post("/simulate/{scenario_index}")
-def simulate_email(scenario_index: int, company_id: uuid.UUID, db: Session = Depends(get_db)):
+def simulate_email(scenario_index: int, company_id: uuid.UUID, external: bool = False, db: Session = Depends(get_db)):
+    """external=true: senaryoyu dışarıdan yazan biri gibi çalıştırır (yalnızca herkese açık belgeler)."""
     with open(TEST_EMAILS_PATH, "r", encoding="utf-8") as f:
         scenarios = json.load(f)
 
@@ -47,5 +48,6 @@ def simulate_email(scenario_index: int, company_id: uuid.UUID, db: Session = Dep
     }
 
     # Simülasyon hiçbir koşulda gerçek mail göndermez (EMAIL_DRY_RUN'dan bağımsız)
-    result = process_single_email(email_data, db, company_override=company, send_email=False)
+    result = process_single_email(email_data, db, company_override=company, send_email=False, is_internal=not external)
+    result["external"] = external
     return result
