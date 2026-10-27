@@ -221,6 +221,8 @@ EMAIL_POLL_INTERVAL_SECONDS=300
 LOG_LEVEL=INFO
 ```
 
+İsteğe bağlı ayarlar (varsayılanları `backend/app/config.py` içinde): `MAX_UPLOAD_MB` (20), `EMAIL_MAX_REPLIES_PER_SENDER_PER_HOUR` (5), `EMAIL_SKIP_MEMORY_DAYS` (30), `THREAD_MATCH_WINDOW_DAYS` (30), `THREAD_RESOLVE_AFTER_DAYS` (14), `TASK_SOFT_TIME_LIMIT_SECONDS` (1800), `NEXT_PUBLIC_API_URL` (frontend build-arg, `http://localhost:8000`).
+
 > **Ağ notu:** Compose, tüm portları (`5432`, `6379`, `8000`, `3000`) yalnızca `127.0.0.1`'e bağlar; servisler aynı makineden `localhost` ile erişilir, yerel ağdaki diğer cihazlara açılmaz. Redis parola ister, Postgres parolası ve Redis parolası `.env`'den gelir. **Mevcut bir `pgdata` volume'unda `POSTGRES_PASSWORD` değerini değiştirmek parolayı değiştirmez** (parola ilk kurulumda belirlenir); değiştirmek için `ALTER USER ik_asistan PASSWORD '...'` çalıştırın ya da `docker compose down -v` ile sıfırdan kurun.
 
 > **`EMAIL_DRY_RUN=true` ile başlayın.** Bu modda sistem gelen kutusunu okur, cevap üretir, ama **gerçek mail göndermez** — sadece konsola yazdırır. Her şeyin doğru çalıştığından emin olduktan sonra `false` yapın.
@@ -305,7 +307,7 @@ Yükleme sınırları: yalnızca `.pdf`, `.jpg`, `.jpeg`, `.png`; dosya içeriğ
 
 ### Analitik
 
-`http://localhost:3000/analytics` — toplam soru sayısı, kaç tanesinin İK'ya yönlendirildiği, ve **en çok yönlendirilen konular.** Bu son liste değerlidir: dokümantasyonunuzda hangi konuların eksik olduğunu gösterir.
+`http://localhost:3000/analytics` — toplam soru sayısı, kaç tanesinin İK'ya yönlendirildiği, cevaplarda bulunan en iyi parçanın **ortalama benzerliği** (güven eşiğini kalibre etmek için), groundedness kontrolünden geçme oranı ve **en çok yönlendirilen konular.** Bu son liste değerlidir: dokümantasyonunuzda hangi konuların eksik olduğunu gösterir.
 
 ### Gerçek E-posta Akışı
 

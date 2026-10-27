@@ -104,6 +104,7 @@ bash stop_dev.sh          # aktif görev kontrolü + durdur + doğrula
 | 12 | Denetim sonrası Paket 1: ölü kod, gereksiz dosya ve kopya kod temizliği | ✅ Tamamlandı (27 Ekim 2026) |
 | 13 | Denetim sonrası Paket 2/A: Docker ortak volume + belge hattı dayanıklılığı + chunk'lama + panel | ✅ Tamamlandı (27 Ekim 2026) |
 | 14 | Denetim sonrası Paket 2/B: e-posta hattı dayanıklılığı | ✅ Tamamlandı (27 Ekim 2026) |
+| 15 | Denetim sonrası Paket 2/C: şema (timestamptz, isimli kısıtlar, skor alanları), Celery ayarları, verdict parse | ✅ Tamamlandı (27 Ekim 2026) |
 | — | Genel değerlendirme + README + dokümantasyon kapanışı | ✅ Tamamlandı — **proje kapatıldı** |
 
 ---
@@ -455,6 +456,19 @@ search → (eşik üstü mü?) → generate_answer → groundedness_check → (d
 
 ---
 
+## FAZ 15 — Denetim Sonrası Paket 2/C (Şema ve Küçükler)
+
+**Yapılanlar:**
+- **15.1 — Şema.** Tüm `created_at` kolonları `timestamp with time zone` oldu (mevcut değerler UTC kabul edilerek dönüştürüldü); uygulama zaten `datetime.now(timezone.utc)` yazıyordu ama kolon naive olduğu için 30 günlük thread penceresi gibi karşılaştırmalar DB oturum saat dilimine bağımlıydı. `Base.metadata`'ya `naming_convention` eklendi; mevcut veritabanlarındaki Postgres varsayılan adlı unique kısıtlar yeni adlarına **koşullu** olarak yeniden adlandırılıyor (sıfırdan kurulumda zaten doğru adla oluşuyorlar). Denetimde bulunan kırık downgrade (`c6f2e5a0b6af`, isimsiz kısıt) gerçek kısıt adını sorgulayarak düzeltildi; migration zinciri `base → head → base → head` tam tur doğrulandı, `alembic revision --autogenerate` boş migration üretiyor (model = DB). `messages.confidence_score` `String` → `Float`, `is_grounded` eklendi. API `created_at` artık `+00:00` ofsetli ISO döndürüyor (eski `+ "Z"` eki timestamptz ile geçersiz olurdu).
+- **15.2 — RAG kararları kayda giriyor.** `search_node` en yüksek benzerliği (`max_similarity`) üretiyor; giden mesajda `confidence_score` ve `is_grounded` doluyor; `/analytics/summary` ortalama benzerlik ve groundedness oranını döndürüyor, panelde iki yeni kutu. Böylece `RAG_CONFIDENCE_THRESHOLD` gerçek trafikle kalibre edilebilir (Faz 1'deki üç örnek cümlelik ölçümün yerine). Groundedness verdict parse'ı dayanıklı: `**Evet**`, `Cevap: HAYIR.`, `hayır, ...` doğru okunuyor; anlaşılamayan cevap `WARNING` ile escalate. Cevap üretiminde `temperature=0.2`; tam cevap metni artık `INFO` yerine `DEBUG` seviyesinde loglanıyor (log dosyasına politika içeriği yazılmıyor).
+- **15.3 — Celery.** `task_acks_late=True` + `task_reject_on_worker_lost=True`: OCR sırasında worker kapanırsa (`docker compose restart`) görev kaybolmuyor, yeniden teslim ediliyor — görevler Faz 13-14'te idempotent yapıldığı için güvenli. `worker_prefetch_multiplier=1`, `task_soft_time_limit` (`TASK_SOFT_TIME_LIMIT_SECONDS`, 1800), Beat görevlerinde `ignore_result=True` (Redis'te okunmayan sonuç birikmiyor), `broker_connection_retry_on_startup`. Yeni günlük Beat görevi `close_stale_threads`: son mesajı `THREAD_RESOLVE_AFTER_DAYS` (14) gündür olmayan `open` thread'ler `resolved` olur (Faz 2'de planlanıp hiç uygulanmamıştı); `escalated` thread'lere dokunulmaz.
+
+**Test:** 114 test (Faz 14 sonunda 102).
+
+**Faz 15 tamamlandı — Paket 2 kapandı.**
+
+---
+
 ## Bilinen Sınırlamalar (Genel Özet)
 
 Proje boyunca bulunan, bilinçli olarak MVP kapsamı dışında bırakılan noktaların toplu listesi (detaylar ilgili faz bölümlerinde):
@@ -474,7 +488,7 @@ Proje boyunca bulunan, bilinçli olarak MVP kapsamı dışında bırakılan nokt
 13. `GET /documents` için `company_id` filtresi isteğe bağlı (Faz 13); `GET /documents/{id}` ve işlem endpoint'leri şirket kontrolü yapmıyor — kimlik doğrulama olmadan anlamlı bir kontrol de mümkün değil. RLS uygulanmadığı için bu, veritabanı seviyesinde de kapatılmadı.
 14. Global bir exception handler / genel hata yönetimi gözden geçirmesi yapılmadı (Faz 9'un bir parçası olarak planlanmıştı, kapsam dışına alındı).
 15. Chunk'lama kural tabanlı (Faz 13: boş satır + Markdown başlığı, 1500 karakter pencere, 200 örtüşme, başlık ön eki) — embedding tabanlı anlamsal bölme yok.
-16. `RAG_CONFIDENCE_THRESHOLD` (0.55) hiç gerçek ölçekte kalibre edilmedi — Faz 1'deki üç örnek cümlelik ölçümden gelen bir başlangıç tahmini.
+16. `RAG_CONFIDENCE_THRESHOLD` (0.55) hiç gerçek ölçekte kalibre edilmedi — Faz 1'deki üç örnek cümlelik ölçümden gelen bir başlangıç tahmini. (Faz 15'ten itibaren her cevapta en yüksek benzerlik kaydediliyor ve analitikte gösteriliyor; kalibrasyon için veri artık birikiyor.)
 17. Test şirketleri ve dokümanları **elle** (`psql` / `POST /companies/add` + panelden yükleme) oluşturuluyor — tekrarlanabilir bir seed/fixture betiği yok (eski `seed_test_hr_data.py` Faz 12'de silindi), `docker compose down -v` sonrası hepsi kayboluyor.
 
 ---
@@ -531,7 +545,7 @@ Bu projede bilinçli olarak kapsam dışı bırakılan, ayrı/daha sade projeler
 
 ## Şu Anki Durum / Devam Noktası
 
-**Tamamlanan:** Faz 0-10'un tamamı + Groundedness Check + CI; Ekim 2026'da denetim, Faz 11 (Paket 0), Faz 12 (Paket 1), Faz 13 (Paket 2/A), Faz 14 (Paket 2/B). Sıradaki: Faz 15 (Paket 2/C, şema ve küçükler).
+**Tamamlanan:** Faz 0-10'un tamamı + Groundedness Check + CI; Ekim 2026'da denetim, Faz 11 (Paket 0), Faz 12 (Paket 1), Faz 13-15 (Paket 2). Sıradaki: Paket 3 (kimlik doğrulama, İK'ya gerçek iletim, thread memory, belge silme, bağımlılık güncellemeleri, CI genişletme) ve Paket 4 (dokümantasyon) — kapsam `Denetim_Raporu.md` üzerinden birlikte kararlaştırılacak.
 **Kapsam dışı bırakılan (bilinçli karar):** Kimlik doğrulama, gerçek sunucuya deploy, PostgreSQL RLS, global exception handler — hepsi "Bilinen Sınırlamalar" listesinde gerekçeleriyle kayıtlı.
 
 **Projeye yeni bakan biri için giriş noktası:** `README.md` (kurulum + kullanım), ardından `Proje_Dokumantasyonu.md` (mimari gerekçeler), ardından bu dosya (uygulama geçmişi ve alınan kararlar).
