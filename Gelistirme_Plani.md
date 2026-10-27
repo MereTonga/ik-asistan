@@ -102,6 +102,7 @@ bash stop_dev.sh          # aktif görev kontrolü + durdur + doğrula
 | 10 | Docker (uygulamanın kendisini container'lama) | ✅ Tamamlandı |
 | 11 | Denetim sonrası Paket 0: gizlilik ve güvenlik hızlı düzeltmeleri | ✅ Tamamlandı (26-27 Ekim 2026) |
 | 12 | Denetim sonrası Paket 1: ölü kod, gereksiz dosya ve kopya kod temizliği | ✅ Tamamlandı (27 Ekim 2026) |
+| 13 | Denetim sonrası Paket 2/A: Docker ortak volume + belge hattı dayanıklılığı + chunk'lama + panel | ✅ Tamamlandı (27 Ekim 2026) |
 | — | Genel değerlendirme + README + dokümantasyon kapanışı | ✅ Tamamlandı — **proje kapatıldı** |
 
 ---
@@ -412,6 +413,23 @@ search → (eşik üstü mü?) → generate_answer → groundedness_check → (d
 
 ---
 
+## FAZ 13 — Denetim Sonrası Paket 2/A (Docker + Belge Hattı)
+
+**Motivasyon:** Denetimin "çalışmayı bozan hatalar" listesinden belge tarafı (F001, F015, F017, F018, F019, F020) ve panelin hata yönetimi (F027, F033).
+
+**Yapılanlar:**
+- **13.1** — `api` ve `worker` container'ları `./backend/uploads` klasörünü bind mount ile paylaşıyor. Faz 10'dan beri Docker modunda yüklenen belgeyi worker **bulamıyordu** (api kendi container diskine yazıyordu); bu, compose modunda belge akışının hiç test edilmediğini gösteriyor.
+- **13.2** — Belge yaşam döngüsü netleştirildi (`DocumentStatus`): `processing → pending_approval | failed`, `pending_approval → indexing → approved`, `approved → indexing (rechunk) → approved`. `documents` tablosuna `document_quality` (yeniden işleme için gerekli) ve `error_message` eklendi; migration, Faz 13 öncesinde metinsiz takılı kalmış belgeleri `failed` yapıyor.
+- **13.3** — Worker: işleme hatası artık `failed` + hata mesajı (sessiz takılma yok). Onay/indeksleme `SELECT ... FOR UPDATE` + savepoint ile idempotent: aynı belge için iki görev çalışsa bile chunk'lar çoğalmaz, hata olursa eski chunk'lar korunur ve belge önceki durumuna döner. API: onay yalnızca `pending_approval` + dolu metinle, durumu hemen `indexing` yapar (ikinci tıklama 409); `POST /documents/{id}/reprocess` ve `POST /documents/{id}/rechunk`; yüklemede uzantı listesi, magic-byte kontrolü, `MAX_UPLOAD_MB` (20) boyut sınırı, `company_id` UUID + varlık kontrolü, `document_quality` yalnızca `clean|complex`; dosya doğrulama geçmeden diske yazılmıyor.
+- **13.4** — `chunk_text` yeniden yazıldı: boş satır ve Markdown başlığı blok sınırı, 1500 karakter pencere + 200 karakter örtüşme (satır/cümle sonunda kesim), başlık her parçanın başına eklenir. Ölçüm: denetimde tek chunk (13.724 karakter) olan 6 sayfalık örnek PDF artık 11 chunk (1223–1490 karakter).
+- **13.5** — Panel: sabit `TEST_COMPANY_ID` kalktı, navbar'da `GET /companies` ile dolan şirket seçici (tarayıcıda hatırlanır); `lib/api.ts` ile tek API adresi (`NEXT_PUBLIC_API_URL`, Docker'da build-arg) ve FastAPI `detail` hatalarının tek yerde çözülmesi; durum etiketleri, hata mesajları, işlenirken 3 saniyede bir otomatik yenileme, "Yeniden işle" / "Yeniden parçala" düğmeleri, boş metinle onay engeli; `/test/simulate` hataları HTTP 404 döndürüyor. Denetim öncesinden kalan 4 `react-hooks/set-state-in-effect` lint hatası da giderildi.
+
+**Test:** 65 test (Faz 12 sonunda 36).
+
+**Faz 13 tamamlandı.**
+
+---
+
 ## Bilinen Sınırlamalar (Genel Özet)
 
 Proje boyunca bulunan, bilinçli olarak MVP kapsamı dışında bırakılan noktaların toplu listesi (detaylar ilgili faz bölümlerinde):
@@ -488,7 +506,7 @@ Bu projede bilinçli olarak kapsam dışı bırakılan, ayrı/daha sade projeler
 
 ## Şu Anki Durum / Devam Noktası
 
-**Tamamlanan:** Faz 0-10'un tamamı + Groundedness Check + CI; Ekim 2026'da denetim, Faz 11 (Paket 0) ve Faz 12 (Paket 1). Sıradaki: Paket 2 (çalışırlık düzeltmeleri) — kapsamı `Denetim_Raporu.md` üzerinden birlikte kararlaştırılacak.
+**Tamamlanan:** Faz 0-10'un tamamı + Groundedness Check + CI; Ekim 2026'da denetim, Faz 11 (Paket 0), Faz 12 (Paket 1), Faz 13 (Paket 2/A). Sıradaki: Faz 14 (Paket 2/B, e-posta hattı) ve Faz 15 (Paket 2/C, şema ve küçükler).
 **Kapsam dışı bırakılan (bilinçli karar):** Kimlik doğrulama, gerçek sunucuya deploy, PostgreSQL RLS, global exception handler — hepsi "Bilinen Sınırlamalar" listesinde gerekçeleriyle kayıtlı.
 
 **Projeye yeni bakan biri için giriş noktası:** `README.md` (kurulum + kullanım), ardından `Proje_Dokumantasyonu.md` (mimari gerekçeler), ardından bu dosya (uygulama geçmişi ve alınan kararlar).

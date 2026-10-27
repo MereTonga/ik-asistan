@@ -20,7 +20,8 @@
 | `karmasik_foto.jpg` | **Kalıyor** (kullanıcı kararı, 27 Ekim): içerik kullanıcıya göre hassas değil. `test_files/` klasörü Faz 12.1'de betiklerle birlikte zaten silindi. |
 | Honcho paketi (`run_dev.sh`, `stop_dev.sh`, `Procfile.dev`, `check_*.py`, honcho) | **Kalıyor** (kullanıcı kararı): container öncesi dönemde terminal kolaylığı sağlıyordu. Yalnızca `run_dev.sh`'nin compose ile port çakışması giderildi (Faz 12.2). |
 | Paket 1 | **Uygulandı (27 Ekim, Faz 12.1–12.8):** betikler + `test_files/` silindi, `smoke_imap.py`, `pytest.ini`; `pymupdf`/`numpy`/`httpx` çıkarıldı (**düzeltme:** `httpx2` gerekli, TestClient onu istiyor); `rag_tasks.py` ve kullanılmayan import'lar; tüm config `settings` üzerinden, tek `get_db`, tek `UPLOAD_DIR`; frontend kalıntıları; compose anchor. Model alanları Paket 2'ye ertelendi. |
-| Paket 2–4 | **Bekliyor**, kapsam kullanıcıyla ayrıntılı konuşulacak. |
+| Paket 2 | **Onaylandı (27 Ekim), tüm öneriler kabul edildi:** 1a bind mount, 2a şirket seçici + api.ts, 3a okundu + yönlendirilenler yıldızlı, 4a 30 gün, 5a saatte 5 cevap/gönderen, 6a reprocess, 7 20 MB, 8a rechunk, 9a alanları doldur + 14 günde resolved. Fazlama: 13 (Docker + belge hattı) ✅, 14 (e-posta hattı), 15 (şema ve küçükler). |
+| Paket 3–4 | **Bekliyor**, Paket 2 bitince ayrıntılı konuşulacak. |
 
 ---
 

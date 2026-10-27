@@ -60,6 +60,7 @@ Bu soruların cevapları genelde bir yerde **yazılıdır** — ama kağıt üze
          │
          ▼
    Onaylandı → metin parçalara (chunk) bölünür → her parça vektöre çevrilir → veritabanına kaydedilir
+   (işleme hatası → "Hatalı" durumu + hata mesajı → "Yeniden işle")
 ```
 
 ### Soru-Cevap Akışı
@@ -272,7 +273,7 @@ docker compose exec postgres psql -U ik_asistan -d ik_asistan_db -c \
    VALUES (gen_random_uuid(), 'Örnek Şirket', 'ornek-sirket.com', now()) RETURNING id;"
 ```
 
-Dönen UUID'yi not edin — frontend'de `company_id` olarak kullanılıyor (şu an sabit kodlu, bkz. Bilinen Sınırlamalar).
+Aynı işi API ile de yapabilirsiniz: `POST /companies/add` (form alanları `name`, `email_domain`). Panel, kayıtlı şirketleri sağ üstteki **şirket seçici**den okur; seçim tarayıcıda hatırlanır ve yükleme, test paneli, analitik bu seçime göre çalışır.
 
 > `email_domain`, gelen e-postanın hangi şirkete ait olduğunu belirler. Örneğin `ahmet@ornek-sirket.com` adresinden gelen bir mail, bu şirkete eşleşir.
 
@@ -283,10 +284,13 @@ Dönen UUID'yi not edin — frontend'de `company_id` olarak kullanılıyor (şu 
 3. Görsel yüklüyorsanız kaliteyi seçin:
    - **Temiz** — düz taranmış, iyi ışıklı belge (hızlı OCR)
    - **Karmaşık** — telefonla çekilmiş, eğik/gölgeli fotoğraf (güçlü ama yavaş OCR)
-4. Yükleme arka planda işlenir (karmaşık fotoğraflarda birkaç dakika sürebilir)
+4. Yükleme arka planda işlenir (karmaşık fotoğraflarda birkaç dakika sürebilir). Belge bu sırada **İşleniyor** durumundadır; detay sayfası kendini birkaç saniyede bir yeniler.
 5. Listeden belgeye tıklayın → **solda orijinal görsel, sağda çıkarılan metin**
 6. Metinde hata varsa **düzeltin ve "Kaydet"** deyin
-7. Doğru olduğundan emin olduğunuzda **"Onayla"** → metin parçalanır, vektörleştirilir ve aranabilir hale gelir
+7. Doğru olduğundan emin olduğunuzda **"Onayla"** → belge **İndeksleniyor** durumuna geçer, metin parçalanır, vektörleştirilir ve **Onaylı** olur
+8. İşleme başarısız olursa belge **Hatalı** durumuna düşer ve hata mesajı görünür; **"Yeniden işle"** ile tekrar denenir. Onaylı bir belgeyi güncel parçalama yöntemiyle yeniden indekslemek için **"Yeniden parçala"** kullanılır.
+
+Yükleme sınırları: yalnızca `.pdf`, `.jpg`, `.jpeg`, `.png`; dosya içeriği uzantısıyla uyuşmalı; üst boyut `MAX_UPLOAD_MB` (varsayılan 20 MB).
 
 > ⚠️ **Onay adımını ciddiye alın.** OCR bazen sessizce yanlış okur — özellikle sayılar, e-posta adresleri, tarihler. Onaylanan metin, çalışanlara verilecek cevapların kaynağı olur.
 
@@ -361,9 +365,9 @@ pytest tests/ --cov=app --cov-report=term-missing # coverage raporu ile
 Bu proje bilinçli olarak sınırlı bir kapsamda tutulmuştur. En önemlileri:
 
 **Güvenlik**
-- **Kimlik doğrulama yok.** Hiçbir endpoint "bu isteği kim atıyor" diye sormuyor; frontend'de `company_id` sabit kodlu. Gerçek bir çok-kullanıcılı ürün için ilk eklenmesi gereken şey budur.
+- **Kimlik doğrulama yok.** Hiçbir endpoint "bu isteği kim atıyor" diye sormuyor; paneldeki şirket seçici bir yetki kontrolü değil, yalnızca görünüm filtresidir. Gerçek bir çok-kullanıcılı ürün için ilk eklenmesi gereken şey budur.
 - **Row Level Security (RLS) yok.** Şirket izolasyonu sadece uygulama kodunda (`WHERE company_id = ...`) — testlerle doğrulanmış durumda, ancak veritabanı seviyesinde ikinci bir savunma hattı yok.
-- `GET /documents` ve `GET /documents/{id}` endpoint'leri `company_id` filtrelemiyor.
+- `GET /documents` için `company_id` filtresi isteğe bağlı; `GET /documents/{id}` ve belge işlem endpoint'leri şirket kontrolü yapmıyor (kimlik doğrulama olmadığı için anlamlı bir kontrol de mümkün değil).
 - Yüklenen dosyalar `/uploads` altında herkese açık servis ediliyor (yetkilendirme yok).
 
 **E-posta**
@@ -374,7 +378,7 @@ Bu proje bilinçli olarak sınırlı bir kapsamda tutulmuştur. En önemlileri:
 - Sadece Gmail + App Password test edildi; OAuth2 ve Outlook/Exchange kurumsal IMAP denenmedi.
 
 **RAG Kalitesi**
-- Chunk'lama basit (paragraf bölme) — semantik/başlık hiyerarşisine duyarlı değil.
+- Chunk'lama kural tabanlı (boş satır + Markdown başlığı ile blok, 1500 karakter pencere, 200 karakter örtüşme, başlık ön eki) — anlamsal (embedding tabanlı) bölme yok.
 - Güven eşiği (0.55) küçük bir örneklemden tahmin edildi, gerçek ölçekte kalibre edilmedi.
 - Gerçek bir reranker modeli yok (groundedness check, aynı LLM ile ikinci bir doğrulama olarak eklendi).
 
