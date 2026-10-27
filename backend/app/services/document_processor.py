@@ -1,4 +1,5 @@
 import os
+import re
 import pdfplumber
 import ollama
 
@@ -74,12 +75,88 @@ def process_document(file_path: str, document_quality: str | None = None) -> dic
     else:
         raise ValueError(f"Desteklenmeyen dosya türü: {extension}")
 
-def chunk_text(text: str, min_length: int = 20) -> list[str]:
-    """Markdown metnini boş satırlara göre paragraf/chunk'lara ayırır.
-    Çok kısa (anlamsız) parçaları eler."""
-    raw_chunks = text.split("\n\n")
-    chunks = [c.strip() for c in raw_chunks if len(c.strip()) >= min_length]
-    return chunks
+_HEADING_RE = re.compile(r"^\s{0,3}#{1,6}\s+\S")
+_SENTENCE_END_RE = re.compile(r"[.!?:;]\s")
+
+
+def _split_blocks(text: str) -> list[tuple[str | None, str]]:
+    """Metni (başlık, gövde) bloklarına ayırır.
+    Blok sınırı: boş satır ya da Markdown başlığı. Başlık, kendisinden sonraki
+    blokların başına eklenir ki her chunk bağlamını taşısın."""
+    blocks: list[tuple[str | None, str]] = []
+    heading: str | None = None
+    buffer: list[str] = []
+
+    def flush():
+        body = "\n".join(buffer).strip()
+        if body:
+            blocks.append((heading, body))
+        buffer.clear()
+
+    for line in text.replace("\r\n", "\n").replace("\r", "\n").split("\n"):
+        if _HEADING_RE.match(line):
+            flush()
+            heading = line.strip()
+        elif not line.strip():
+            flush()
+        else:
+            buffer.append(line)
+    flush()
+    return blocks
+
+
+def _cut_point(segment: str, max_chars: int) -> int:
+    """`segment[:max_chars]` içinde mümkünse bir satır/cümle sonunda kesilecek konumu döner."""
+    window = segment[:max_chars]
+    newline = window.rfind("\n")
+    if newline >= max_chars // 2:
+        return newline + 1
+    sentence_ends = [m.end() for m in _SENTENCE_END_RE.finditer(window)]
+    if sentence_ends and sentence_ends[-1] >= max_chars // 2:
+        return sentence_ends[-1]
+    space = window.rfind(" ")
+    if space >= max_chars // 2:
+        return space + 1
+    return max_chars
+
+
+def _window(body: str, max_chars: int, overlap: int) -> list[str]:
+    """Uzun bir gövdeyi en fazla max_chars uzunlukta, `overlap` kadar örtüşen pencerelere böler."""
+    pieces: list[str] = []
+    start = 0
+    while start < len(body):
+        remaining = body[start:]
+        if len(remaining) <= max_chars:
+            pieces.append(remaining.strip())
+            break
+        cut = _cut_point(remaining, max_chars)
+        pieces.append(remaining[:cut].strip())
+        # Bir sonraki pencere, bağlam kopmasın diye `overlap` kadar geriden başlar
+        start += max(cut - overlap, 1)
+    return [p for p in pieces if p]
+
+
+def chunk_text(text: str, min_length: int = 20, max_chars: int = 1500, overlap: int = 200) -> list[str]:
+    """Metni RAG için chunk'lara ayırır.
+
+    1) Boş satırlar ve Markdown başlıkları blok sınırıdır (OCR çıktısı başlıklı Markdown üretir).
+    2) max_chars'tan uzun bloklar satır/cümle sonlarında kesilerek `overlap` örtüşmeli
+       pencerelere bölünür. pdfplumber çıktısı gibi hiç boş satır içermeyen metinler de
+       böylece tek dev chunk olmaktan kurtulur.
+    3) Her chunk'ın başına bağlı olduğu başlık eklenir (varsa).
+    4) min_length'ten kısa parçalar elenir.
+    """
+    if not text or not text.strip():
+        return []
+
+    chunks: list[str] = []
+    for heading, body in _split_blocks(text):
+        prefix = f"{heading}\n\n" if heading else ""
+        budget = max(max_chars - len(prefix), max_chars // 2)
+        for piece in _window(body, budget, overlap):
+            chunks.append(prefix + piece)
+
+    return [c for c in chunks if len(c) >= min_length]
 
 
 def get_embedding(text: str) -> list[float]:
