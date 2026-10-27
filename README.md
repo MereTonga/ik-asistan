@@ -221,7 +221,7 @@ EMAIL_POLL_INTERVAL_SECONDS=300
 LOG_LEVEL=INFO
 ```
 
-İsteğe bağlı ayarlar (varsayılanları `backend/app/config.py` içinde): `MAX_UPLOAD_MB` (20), `EMAIL_MAX_REPLIES_PER_SENDER_PER_HOUR` (5), `EMAIL_SKIP_MEMORY_DAYS` (30), `THREAD_MATCH_WINDOW_DAYS` (30), `THREAD_RESOLVE_AFTER_DAYS` (14), `TASK_SOFT_TIME_LIMIT_SECONDS` (1800), `NEXT_PUBLIC_API_URL` (frontend build-arg, `http://localhost:8000`).
+İsteğe bağlı ayarlar (varsayılanları `backend/app/config.py` içinde): `MAX_UPLOAD_MB` (20), `EMAIL_MAX_REPLIES_PER_SENDER_PER_HOUR` (5), `EMAIL_SKIP_MEMORY_DAYS` (30), `THREAD_MATCH_WINDOW_DAYS` (30), `THREAD_RESOLVE_AFTER_DAYS` (14), `THREAD_RETENTION_DAYS` (0 = kapalı; >0 ise bu kadar günden eski yazışmalar her gece silinir), `TASK_SOFT_TIME_LIMIT_SECONDS` (1800), `NEXT_PUBLIC_API_URL` (frontend build-arg, `http://localhost:8000`).
 
 > **Ağ notu:** Compose, tüm portları (`5432`, `6379`, `8000`, `3000`) yalnızca `127.0.0.1`'e bağlar; servisler aynı makineden `localhost` ile erişilir, yerel ağdaki diğer cihazlara açılmaz. Redis parola ister, Postgres parolası ve Redis parolası `.env`'den gelir. **Mevcut bir `pgdata` volume'unda `POSTGRES_PASSWORD` değerini değiştirmek parolayı değiştirmez** (parola ilk kurulumda belirlenir); değiştirmek için `ALTER USER ik_asistan PASSWORD '...'` çalıştırın ya da `docker compose down -v` ile sıfırdan kurun.
 
@@ -283,6 +283,16 @@ docker compose exec postgres psql -U ik_asistan -d ik_asistan_db -c \
 Aynı işi API ile de yapabilirsiniz: `POST /companies/add` (form alanları `name`, `email_domain`). Panel, kayıtlı şirketleri sağ üstteki **şirket seçici**den okur; seçim tarayıcıda hatırlanır ve yükleme, test paneli, analitik bu seçime göre çalışır.
 
 > `email_domain`, gelen e-postanın hangi şirkete ait olduğunu belirler. Örneğin `ahmet@ornek-sirket.com` adresinden gelen bir mail, bu şirkete eşleşir.
+
+### Örnek Veri (Seed)
+
+Boş bir kurulumda sistemi hemen denemek için iki örnek şirket (`ornek-a.com`, `ornek-b.com`) ve farklı sayılarla yazılmış iki politika belgesi hazır:
+
+```bash
+docker compose exec api python -m app.seed
+```
+
+Komut `backend/seed/*.md` dosyalarını belge olarak yükler, chunk'lar ve embedding'leriyle onaylar (Ollama açık olmalı). Var olan şirket ve belgeleri atlar; tekrar çalıştırmak güvenlidir. Normal kullanımda gerekmez, belgeler panelden yüklenir.
 
 ### Belge Yükleme ve Onaylama
 
