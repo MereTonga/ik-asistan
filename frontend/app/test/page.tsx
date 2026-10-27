@@ -19,26 +19,35 @@ type SimulationResult = {
   answer?: string;
   was_escalated?: boolean;
   external?: boolean; // dışarıdan gelen gibi çalıştırıldı
+  question?: string; // gönderilen soru (takip sorusunda farklıdır)
+  is_follow_up?: boolean;
   error?: string; // istek seviyesinde hata (ağ, 4xx) — UI'da gösterilir
 };
 
 // Sonuçlar bu bileşenin state'inde yaşar; üst bileşen şirket değişince `key` ile yeniden
 // kurar, böylece A şirketinin cevabı B şirketi seçiliyken ekranda kalmaz.
 function ScenarioRunner({ scenarios, company }: { scenarios: Scenario[]; company: Company }) {
-  const [results, setResults] = useState<Record<number, SimulationResult>>({});
+  const [results, setResults] = useState<Record<number, SimulationResult[]>>({});
+  const [followUps, setFollowUps] = useState<Record<number, string>>({});
   const [loadingIndex, setLoadingIndex] = useState<number | null>(null);
   const [external, setExternal] = useState(false);
 
-  const handleSimulate = async (index: number) => {
+  const run = async (index: number, question?: string) => {
     setLoadingIndex(index);
     try {
       const data = await apiFetch<SimulationResult>(
         `/test/simulate/${index}?company_id=${company.id}&external=${external}`,
-        { method: "POST" }
+        question
+          ? { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ question }) }
+          : { method: "POST" }
       );
-      setResults((prev) => ({ ...prev, [index]: data }));
+      setResults((prev) => ({ ...prev, [index]: [...(prev[index] ?? []), data] }));
+      if (question) setFollowUps((prev) => ({ ...prev, [index]: "" }));
     } catch (err) {
-      setResults((prev) => ({ ...prev, [index]: { status: "error", error: errorMessage(err) } }));
+      setResults((prev) => ({
+        ...prev,
+        [index]: [...(prev[index] ?? []), { status: "error", error: errorMessage(err), question }],
+      }));
     } finally {
       setLoadingIndex(null);
     }
@@ -54,7 +63,8 @@ function ScenarioRunner({ scenarios, company }: { scenarios: Scenario[]; company
         </span>
       </label>
       {scenarios.map((scenario, index) => {
-        const result = results[index];
+        const chain = results[index] ?? [];
+        const followUp = followUps[index] ?? "";
         return (
           <Card key={index}>
             <CardHeader>
@@ -68,14 +78,19 @@ function ScenarioRunner({ scenarios, company }: { scenarios: Scenario[]; company
 
               <Button
                 variant="outline"
-                onClick={() => handleSimulate(index)}
+                onClick={() => run(index)}
                 disabled={loadingIndex !== null}
               >
                 {loadingIndex === index ? "Çalışıyor..." : "Bu Senaryoyu Çalıştır"}
               </Button>
 
-              {result && (
-                <div className="rounded border border-slate-200 p-3">
+              {chain.map((result, i) => (
+                <div key={i} className="rounded border border-slate-200 p-3">
+                  {result.is_follow_up && result.question && (
+                    <p className="mb-2 text-sm text-slate-500">
+                      <span className="font-medium">Takip sorusu:</span> {result.question}
+                    </p>
+                  )}
                   {result.status === "error" ? (
                     <Badge variant="destructive">Hata: {result.error}</Badge>
                   ) : result.status === "skipped" ? (
@@ -91,6 +106,27 @@ function ScenarioRunner({ scenarios, company }: { scenarios: Scenario[]; company
                       <p className="mt-2 whitespace-pre-wrap text-sm">{result.answer}</p>
                     </>
                   )}
+                </div>
+              ))}
+
+              {chain.some((r) => r.status === "processed") && (
+                <div className="flex flex-col gap-2 rounded border border-dashed border-slate-300 p-3">
+                  <label className="text-sm font-medium">Takip sorusu (aynı yazışmaya bağlanır, hafıza devreye girer)</label>
+                  <textarea
+                    value={followUp}
+                    onChange={(e) => setFollowUps((prev) => ({ ...prev, [index]: e.target.value }))}
+                    placeholder="Örn: Peki ya cuma günleri?"
+                    className="h-20 w-full rounded border border-slate-200 p-2 text-sm"
+                  />
+                  <div>
+                    <Button
+                      variant="outline"
+                      onClick={() => run(index, followUp.trim())}
+                      disabled={loadingIndex !== null || followUp.trim().length === 0}
+                    >
+                      {loadingIndex === index ? "Çalışıyor..." : "Takip sorusunu gönder"}
+                    </Button>
+                  </div>
                 </div>
               )}
             </CardContent>

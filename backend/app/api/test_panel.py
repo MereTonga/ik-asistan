@@ -2,7 +2,8 @@ import json
 import os
 import uuid
 from email.utils import make_msgid
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Body, Depends, HTTPException
+from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from app.db.session import get_db
@@ -22,8 +23,20 @@ def get_test_scenarios():
         return json.load(f)
 
 
+class SimulateBody(BaseModel):
+    """İsteğe bağlı: senaryonun gövdesi yerine özel bir soru (takip sorusu). Gönderen ve konu aynı
+    kaldığı için aynı thread'e bağlanır ve konuşma hafızası devreye girer."""
+    question: str | None = None
+
+
 @router.post("/simulate/{scenario_index}")
-def simulate_email(scenario_index: int, company_id: uuid.UUID, external: bool = False, db: Session = Depends(get_db)):
+def simulate_email(
+    scenario_index: int,
+    company_id: uuid.UUID,
+    external: bool = False,
+    payload: SimulateBody | None = Body(None),
+    db: Session = Depends(get_db),
+):
     """external=true: senaryoyu dışarıdan yazan biri gibi çalıştırır (yalnızca herkese açık belgeler)."""
     with open(TEST_EMAILS_PATH, "r", encoding="utf-8") as f:
         scenarios = json.load(f)
@@ -39,15 +52,20 @@ def simulate_email(scenario_index: int, company_id: uuid.UUID, external: bool = 
     if company is None:
         raise HTTPException(status_code=404, detail="Şirket bulunamadı")
 
+    question = (payload.question if payload and payload.question else "").strip()
+    is_follow_up = bool(question)
+
     email_data = {
         "message_id": make_msgid(),
         "in_reply_to": None,
         "from_address": scenario["sender"],
-        "subject": scenario["subject"],
-        "body": scenario["body"],
+        "subject": f"Re: {scenario['subject']}" if is_follow_up else scenario["subject"],
+        "body": question or scenario["body"],
     }
 
     # Simülasyon hiçbir koşulda gerçek mail göndermez (EMAIL_DRY_RUN'dan bağımsız)
     result = process_single_email(email_data, db, company_override=company, send_email=False, is_internal=not external)
     result["external"] = external
+    result["question"] = email_data["body"]
+    result["is_follow_up"] = is_follow_up
     return result

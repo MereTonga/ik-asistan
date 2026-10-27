@@ -108,5 +108,15 @@
     "sender": "okan.balci@yahoo.com",
     "subject": "İzin Talebi İptali",
     "body": "Merhaba, onaylanan bir izin talebini sonradan iptal edebiliyor muyuz?"
+  },
+  {
+    "sender": "aday.ayse@gmail.com",
+    "subject": "Staj Başvurusu",
+    "body": "Merhaba, yaz staj programınıza nasıl başvurabilirim ve başvurular ne zaman başlıyor?"
+  },
+  {
+    "sender": "eski.calisan@hotmail.com",
+    "subject": "Çalışma Belgesi Talebi",
+    "body": "Merhaba, şirketinizden geçen yıl ayrıldım; çalışma belgesi almak için nasıl bir yol izlemeliyim, ne kadar sürer?"
   }
 ]
