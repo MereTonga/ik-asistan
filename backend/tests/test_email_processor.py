@@ -158,3 +158,30 @@ def test_is_already_processed_detects_duplicate(db_session, test_company):
     assert is_already_processed("<already-seen@example.com>", db_session) is True
     assert is_already_processed("<never-seen@example.com>", db_session) is False
     assert is_already_processed(None, db_session) is False
+
+
+# --- Faz 18.2: gönderen çözümleme -------------------------------------------------
+
+def test_resolve_sender_prefers_authorized_address_then_domain(db_session, test_company, test_company_b, monkeypatch):
+    import app.email_service.processor as processor_module
+    from app.email_service.processor import resolve_sender
+    from app.models import AuthorizedSender
+
+    monkeypatch.setattr(processor_module.settings, "DEFAULT_COMPANY_DOMAIN", None)
+    db_session.add(AuthorizedSender(company_id=test_company_b.id, email="stajyer@gmail.com", note="stajyer"))
+    db_session.flush()
+
+    assert resolve_sender("Stajyer@Gmail.com", db_session) == (test_company_b, True)   # liste, büyük/küçük harf duyarsız
+    assert resolve_sender("ali@testcompany.com", db_session) == (test_company, True)   # domain
+    assert resolve_sender("biri@bilinmeyen.com", db_session) == (None, False)         # varsayılan şirket yok → atla
+    assert resolve_sender("bozuk", db_session) == (None, False)
+
+
+def test_resolve_sender_falls_back_to_default_company_as_external(db_session, test_company, monkeypatch):
+    import app.email_service.processor as processor_module
+    from app.email_service.processor import resolve_sender
+
+    monkeypatch.setattr(processor_module.settings, "DEFAULT_COMPANY_DOMAIN", "TestCompany.com")
+
+    assert resolve_sender("aday@outlook.com", db_session) == (test_company, False)
+    assert resolve_sender("ali@testcompany.com", db_session) == (test_company, True)

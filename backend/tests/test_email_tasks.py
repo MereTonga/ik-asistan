@@ -403,3 +403,45 @@ def test_notification_failure_does_not_break_processing(mock_build_graph, mock_s
 
     assert result["status"] == "processed"
     assert db_session.query(Message).filter(Message.message_id_header == "<r-n7@x>").count() == 1
+
+
+# --- Faz 18.2: yetkili gönderen ve atlama belleği ------------------------------
+
+def test_clear_skip_memory_removes_only_skip_keys(fake_redis):
+    import app.tasks.email_tasks as tasks_module
+
+    fake_redis.set(tasks_module._skip_key("<a@x>"), "unknown_domain")
+    fake_redis.set(tasks_module._skip_key("<b@x>"), "auto")
+    fake_redis.set(f"{tasks_module.RATE_KEY_PREFIX}ali@x.com", "3")
+
+    assert tasks_module.clear_skip_memory() == 2
+    assert not fake_redis.exists(tasks_module._skip_key("<a@x>"))
+    assert fake_redis.exists(f"{tasks_module.RATE_KEY_PREFIX}ali@x.com")
+
+
+@patch("app.tasks.email_tasks.send_reply")
+@patch("app.tasks.email_tasks.build_rag_graph")
+def test_check_new_emails_task_accepts_authorized_personal_address(mock_build_graph, mock_send_reply, monkeypatch, fake_redis, db_session, test_session_factory, test_company):
+    import app.tasks.email_tasks as tasks_module
+    from app.models import AuthorizedSender, EmailThread
+
+    monkeypatch.setattr(tasks_module, "SessionLocal", test_session_factory)
+    mock_build_graph.return_value = _fake_graph()
+    mock_send_reply.side_effect = _unique_ids()
+    db_session.add(AuthorizedSender(company_id=test_company.id, email="stajyer@gmail.com"))
+    db_session.flush()
+
+    inbox = FakeInbox({
+        1: _raw_mail("<s1@x>", sender="Stajyer@gmail.com"),      # listede → çalışan gibi
+        2: _raw_mail("<s2@x>", sender="yabanci@gmail.com"),      # listede değil, varsayılan şirket yok → atla
+    })
+    monkeypatch.setattr(tasks_module, "ImapInbox", lambda: inbox)
+
+    result = tasks_module.check_new_emails_task()
+
+    assert result == {"processed": 1, "skipped": 1, "errors": 0}
+    assert inbox.marked == {1: False}
+    db_session.expire_all()
+    thread = db_session.query(EmailThread).filter(EmailThread.root_message_id_header == "<s1@x>").one()
+    assert str(thread.company_id) == str(test_company.id)
+    assert thread.is_external is False

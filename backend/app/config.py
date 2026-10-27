@@ -48,6 +48,9 @@ class Settings(BaseSettings):
     EMAIL_DRY_RUN: bool = True
     EMAIL_POLL_INTERVAL_SECONDS: float = 120
     HR_NOTIFY_EMAIL: str | None = None  # şirket kaydında hr_notify_email yoksa kullanılacak genel İK bildirim adresi
+    # Programı çalıştıran şirketin domain'i: hiçbir şirkete eşleşmeyen (dışarıdan gelen) mailler bu şirketin
+    # yalnızca "herkese açık" belgeleriyle cevaplanır. Boşsa dışarıdan gelen mailler atlanır.
+    DEFAULT_COMPANY_DOMAIN: str | None = None
     EMAIL_MAX_REPLIES_PER_SENDER_PER_HOUR: int = 5  # aynı gönderene saatte en fazla bu kadar cevap (döngü/istismar koruması)
     EMAIL_SKIP_MEMORY_DAYS: int = 30  # atlanan maillerin (bilinmeyen domain, oto-yanıt) Redis'te hatırlanma süresi
     THREAD_MATCH_WINDOW_DAYS: int = 30  # aynı gönderen + aynı konu kaç gün içinde eski thread'e bağlanır

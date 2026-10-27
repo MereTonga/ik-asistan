@@ -1,6 +1,6 @@
 import uuid
 from datetime import datetime, timezone
-from sqlalchemy import Column, String, DateTime, ForeignKey, Index, Text, Boolean, Float
+from sqlalchemy import Column, String, DateTime, ForeignKey, Index, Text, Boolean, Float, false
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
 
@@ -27,6 +27,8 @@ class EmailThread(Base):
     root_message_id_header = Column(String, nullable=True, unique=True)
 
     status = Column(String, nullable=False, default=ThreadStatus.OPEN)  # bkz. ThreadStatus
+    # Dışarıdan yazan biri (şirket çalışanı değil): yalnızca herkese açık belgelerle cevaplanır (Faz 18)
+    is_external = Column(Boolean, nullable=False, default=False, server_default=false())
     created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
 
     messages = relationship("Message", back_populates="thread", cascade="all, delete-orphan")

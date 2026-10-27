@@ -7,9 +7,9 @@ from app.celery_app import celery_app
 from app.config import settings
 from app.db.session import SessionLocal
 from app.email_service.processor import (
-    find_company_by_email_domain,
     find_or_create_thread,
     is_already_processed,
+    resolve_sender,
 )
 from app.email_service.reader import ImapInbox, parse_email, parse_headers
 from app.email_service.sender import send_hr_notification, send_reply
@@ -37,6 +37,17 @@ def _remember_skip(message_id: str, reason: str) -> None:
 
 def _is_remembered_skip(message_id: str) -> bool:
     return bool(redis_client.exists(_skip_key(message_id)))
+
+
+def clear_skip_memory() -> int:
+    """Atlama belleğini boşaltır (şirket / yetkili gönderen eklendiğinde): daha önce 'bilinmeyen domain'
+    diye atlanan mailler bir sonraki turda yeniden değerlendirilir. Silinen kayıt sayısını döner."""
+    keys = list(redis_client.scan_iter(match=f"{SKIP_KEY_PREFIX}*"))
+    for key in keys:
+        redis_client.delete(key)
+    if keys:
+        logger.info(f"Atlama belleği temizlendi: {len(keys)} kayıt")
+    return len(keys)
 
 
 def _rate_limit_exceeded(sender: str) -> bool:
@@ -90,7 +101,13 @@ def _discard_incoming_stamp(db, incoming_id, thread_id, thread_was_new) -> None:
     db.commit()
 
 
-def process_single_email(email_data: dict, db, company_override=None, send_email: bool = True) -> dict:
+def process_single_email(
+    email_data: dict,
+    db,
+    company_override=None,
+    send_email: bool = True,
+    is_internal: bool | None = None,
+) -> dict:
     """
     Tek bir e-postayı baştan sona işler: idempotency, thread eşleştirme,
     RAG, cevaplama, kayıt. Hem gerçek IMAP akışı hem de /test simülasyonu
@@ -102,17 +119,28 @@ def process_single_email(email_data: dict, db, company_override=None, send_email
     böylece mail bir sonraki poll'da yeniden denenir, ama başarıyla gönderilmiş bir cevap
     asla ikinci kez gönderilmez.
 
-    company_override: Verilirse, domain'e göre arama yapılmaz, doğrudan bu şirket kullanılır.
+    company_override: Verilirse, gönderen çözümlemesi yapılmaz, doğrudan bu şirket kullanılır.
     send_email: False verilirse SMTP'ye hiç gidilmez (test paneli daima False geçer).
+    is_internal: None ise gönderen adresinden çözülür (resolve_sender); False ise dış gönderen
+                 (yalnızca herkese açık belgeler, thread is_external=True).
     """
     if is_already_processed(email_data["message_id"], db):
         return {"status": "skipped", "reason": "already_processed"}
 
-    company = company_override or find_company_by_email_domain(email_data["from_address"], db)
+    if company_override is not None:
+        company = company_override
+        if is_internal is None:
+            is_internal = True
+    else:
+        company, resolved_internal = resolve_sender(email_data["from_address"], db)
+        if is_internal is None:
+            is_internal = resolved_internal
     if company is None:
         return {"status": "skipped", "reason": "unknown_domain"}
 
     thread, is_new = find_or_create_thread(email_data, str(company.id), db)
+    if is_new and not is_internal:
+        thread.is_external = True
 
     incoming_message = Message(
         thread_id=thread.id,
@@ -129,6 +157,7 @@ def process_single_email(email_data: dict, db, company_override=None, send_email
         rag_result = graph.invoke({
             "company_id": str(company.id),
             "question": email_data["body"],
+            "include_internal": bool(is_internal),
             "retrieved_chunks": [],
             "has_confident_match": False,
             "answer": "",
@@ -223,7 +252,7 @@ def check_new_emails_task():
                         counters["skipped"] += 1
                         continue
 
-                    company = find_company_by_email_domain(head["from_address"], db)
+                    company, is_internal = resolve_sender(head["from_address"], db)
                     if company is None:
                         logger.info(f"Bilinmeyen domain, atlandı: {head['from_address']} ({message_id})")
                         _remember_skip(message_id, "unknown_domain")
@@ -239,7 +268,7 @@ def check_new_emails_task():
                     email_data = parse_email(inbox.fetch_message(uid), uid)
                     email_data["message_id"] = message_id
 
-                    result = process_single_email(email_data, db, company_override=company)
+                    result = process_single_email(email_data, db, company_override=company, is_internal=is_internal)
                     if result["status"] == "processed":
                         counters["processed"] += 1
                         inbox.mark_processed(uid, flagged=bool(result["was_escalated"]))

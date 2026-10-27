@@ -6,7 +6,7 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.config import settings
-from app.models import EmailThread, Message, Company
+from app.models import AuthorizedSender, EmailThread, Message, Company
 
 # Takip maillerinin eski thread'e bağlanmaya devam ettiği durumlar (resolved thread'e yeni mail gelirse yeni thread açılır)
 _MATCHABLE_THREAD_STATUSES = ("open", "escalated")
@@ -39,6 +39,42 @@ def find_company_by_email_domain(from_address: str, db: Session) -> Company | No
         return None
     domain = normalize_domain(from_address.split("@")[-1])
     return db.query(Company).filter(func.lower(Company.email_domain) == domain).first()
+
+
+def find_default_company(db: Session) -> Company | None:
+    """DEFAULT_COMPANY_DOMAIN ayarıyla belirtilen 'programı çalıştıran' şirket; dışarıdan gelen
+    mailler bu şirketin herkese açık belgeleriyle cevaplanır. Ayar boşsa None."""
+    domain = normalize_domain(settings.DEFAULT_COMPANY_DOMAIN or "")
+    if not domain:
+        return None
+    return db.query(Company).filter(func.lower(Company.email_domain) == domain).first()
+
+
+def resolve_sender(from_address: str, db: Session) -> tuple[Company | None, bool]:
+    """Gönderen adresini bir şirkete ve kapsama bağlar. Dönüş: (şirket, is_internal).
+
+    1) Adres bir şirketin yetkili gönderen listesindeyse → (o şirket, True)   [kişisel adres kullanan çalışan]
+    2) Adresin domain'i bir şirketin domain'iyse        → (o şirket, True)   [şirket çalışanı]
+    3) DEFAULT_COMPANY_DOMAIN ayarlıysa                  → (o şirket, False)  [dışarıdan biri: yalnızca public belgeler]
+    4) Hiçbiri                                           → (None, False)      [atlanır]
+    """
+    address = (from_address or "").strip().lower()
+    if "@" not in address:
+        return None, False
+
+    authorized = db.query(AuthorizedSender).filter(func.lower(AuthorizedSender.email) == address).first()
+    if authorized is not None:
+        return authorized.company, True
+
+    company = find_company_by_email_domain(address, db)
+    if company is not None:
+        return company, True
+
+    default_company = find_default_company(db)
+    if default_company is not None:
+        return default_company, False
+
+    return None, False
 
 
 def find_or_create_thread(email_data: dict, company_id: str, db: Session) -> tuple[EmailThread, bool]:

@@ -54,6 +54,11 @@ class FakeRedis:
         self.data.pop(key, None)
         self.ttl.pop(key, None)
 
+    def scan_iter(self, match="*"):
+        import fnmatch
+
+        return iter([k for k in list(self.data) if fnmatch.fnmatch(k, match)])
+
     def lock(self, name, timeout=None, blocking=True):
         return FakeLock(self, name)
 
