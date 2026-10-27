@@ -42,7 +42,7 @@ def _serialize(document: Document, detail: bool = False) -> dict:
         "source_type": document.source_type,
         "status": document.status,
         "error_message": document.error_message,
-        "created_at": document.created_at.isoformat() + "Z" if document.created_at else None,
+        "created_at": document.created_at.isoformat() if document.created_at else None,  # timestamptz → '+00:00' ile
     }
     if detail:
         data.update(

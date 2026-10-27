@@ -41,7 +41,7 @@ class Document(Base):
 
     raw_extracted_text = Column(Text, nullable=True)  # onay ekranında gösterilecek ham çıktı
     error_message = Column(Text, nullable=True)  # son işleme/indeksleme hatası (varsa)
-    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
 
     # Bir Document, birden fazla chunk'a sahip olabilir
     chunks = relationship("DocumentChunk", back_populates="document", cascade="all, delete-orphan")
@@ -60,7 +60,7 @@ class DocumentChunk(Base):
     chunk_text = Column(Text, nullable=False)
     embedding = Column(Vector(EMBEDDING_BOYUTU), nullable=True)
 
-    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
 
     document = relationship("Document", back_populates="chunks")
 
