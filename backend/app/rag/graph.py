@@ -1,24 +1,19 @@
-import os
 from typing import TypedDict
 import ollama
-from dotenv import load_dotenv
-
-load_dotenv(dotenv_path=os.path.join(os.path.dirname(__file__), "../../../.env"))
-
 from langgraph.graph import StateGraph, END
-from app.rag.retrieval import search_relevant_chunks
 
+from app.config import settings
+from app.rag.retrieval import search_relevant_chunks
 from app.logging_config import get_logger
 
 logger = get_logger(__name__)
 
-LLM_MODEL = os.getenv("LLM_MODEL")
-CONTEXT_SIZE = int(os.getenv("CONTEXT_SIZE", 4096))
-OLLAMA_HOST = os.getenv("OLLAMA_BASE_URL")
+LLM_MODEL = settings.LLM_MODEL
+CONTEXT_SIZE = settings.CONTEXT_SIZE
 
-client = ollama.Client(host=OLLAMA_HOST)
+client = ollama.Client(host=settings.OLLAMA_BASE_URL)
 
-GROUNDEDNESS_CHECK_ENABLED = os.getenv("GROUNDEDNESS_CHECK_ENABLED", "true").lower() == "true"
+GROUNDEDNESS_CHECK_ENABLED = settings.GROUNDEDNESS_CHECK_ENABLED
 
 GROUNDEDNESS_PROMPT = """Sen bir doğrulama uzmanısın. Aşağıda bir KAYNAK METİN ve bu metne dayanarak üretilmiş bir CEVAP var.
 Görevin: CEVAP'ta, KAYNAK METİN'de YER ALMAYAN somut, yanlış ya da uydurulmuş bir BİLGİ olup olmadığını kontrol etmek.

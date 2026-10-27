@@ -7,24 +7,15 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 from fastapi import APIRouter, UploadFile, File, Form, HTTPException
 
-from app.db.session import SessionLocal
+from app.config import UPLOAD_DIR
+from app.db.session import get_db
 from app.models import Document
 from app.tasks.document_tasks import process_uploaded_document_task, approve_document_task
 
 router = APIRouter(prefix="/documents", tags=["documents"])
 
-UPLOAD_DIR = os.path.join(os.path.dirname(__file__), "../../uploads")
-os.makedirs(UPLOAD_DIR, exist_ok=True)
-
 class DocumentTextUpdate(BaseModel):
     raw_extracted_text: str
-
-def get_db():
-    db = SessionLocal()
-    try:
-        yield db
-    finally:
-        db.close()
 
 
 @router.post("/upload")

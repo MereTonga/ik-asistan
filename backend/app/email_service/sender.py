@@ -1,16 +1,14 @@
-import os
 import smtplib
 from email.mime.text import MIMEText
 from email.utils import make_msgid
-from dotenv import load_dotenv
 
-load_dotenv(dotenv_path=os.path.join(os.path.dirname(__file__), "../../../.env"))
+from app.config import settings
 
-EMAIL_ADDRESS = os.getenv("EMAIL_ADDRESS")
-EMAIL_APP_PASSWORD = os.getenv("EMAIL_APP_PASSWORD")
-SMTP_SERVER = os.getenv("SMTP_SERVER")
-SMTP_PORT = int(os.getenv("SMTP_PORT", 587))
-EMAIL_DRY_RUN = os.getenv("EMAIL_DRY_RUN", "true").lower() == "true"
+EMAIL_ADDRESS = settings.EMAIL_ADDRESS
+EMAIL_APP_PASSWORD = settings.EMAIL_APP_PASSWORD
+SMTP_SERVER = settings.SMTP_SERVER
+SMTP_PORT = settings.SMTP_PORT
+EMAIL_DRY_RUN = settings.EMAIL_DRY_RUN  # pydantic bool: "true/1/yes/on" hepsi True sayılır
 
 
 def send_reply(to_address: str, subject: str, body: str, in_reply_to_message_id: str | None = None) -> str:

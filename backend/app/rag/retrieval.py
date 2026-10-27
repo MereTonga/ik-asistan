@@ -1,14 +1,11 @@
-import os
 from sqlalchemy.orm import Session
-from dotenv import load_dotenv
 
-load_dotenv(dotenv_path=os.path.join(os.path.dirname(__file__), "../../../.env"))
-
+from app.config import settings
 from app.models import DocumentChunk, Document
 from app.services.document_processor import get_embedding
 
-RAG_TOP_K = int(os.getenv("RAG_TOP_K", 3))
-RAG_CONFIDENCE_THRESHOLD = float(os.getenv("RAG_CONFIDENCE_THRESHOLD", 0.55))
+RAG_TOP_K = settings.RAG_TOP_K
+RAG_CONFIDENCE_THRESHOLD = settings.RAG_CONFIDENCE_THRESHOLD
 
 
 def search_relevant_chunks(company_id: str, query_text: str, db: Session) -> list[dict]:

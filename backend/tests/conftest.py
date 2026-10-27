@@ -9,11 +9,10 @@ from alembic import command
 from alembic.config import Config
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
-from dotenv import load_dotenv
 
-load_dotenv(dotenv_path=os.path.join(os.path.dirname(__file__), "../../.env"))
+from app.config import settings
 
-TEST_DATABASE_URL = os.getenv("TEST_DATABASE_URL")
+TEST_DATABASE_URL = settings.TEST_DATABASE_URL
 
 engine = create_engine(TEST_DATABASE_URL)
 TestSessionLocal = sessionmaker(bind=engine)
@@ -91,12 +90,13 @@ def test_company(db_session):
 def client(db_session):
     from fastapi.testclient import TestClient
     from app.main import app
-    from app.api.documents import get_db as documents_get_db
+    from app.db.session import get_db
 
     def override_get_db():
         yield db_session
 
-    app.dependency_overrides[documents_get_db] = override_get_db
+    # Tüm router'lar aynı get_db'yi kullandığı için tek override hepsini kapsar
+    app.dependency_overrides[get_db] = override_get_db
 
     with TestClient(app) as test_client:
         yield test_client

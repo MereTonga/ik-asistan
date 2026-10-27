@@ -26,6 +26,7 @@ def test_settings_loads_with_all_required_fields():
     assert settings.CONTEXT_SIZE == 4096
     assert settings.EMAIL_DRY_RUN is True
     assert settings.RAG_CONFIDENCE_THRESHOLD == 0.55
+    assert settings.GROUNDEDNESS_CHECK_ENABLED is True
 
 
 def test_settings_raises_when_required_field_missing(monkeypatch: pytest.MonkeyPatch):

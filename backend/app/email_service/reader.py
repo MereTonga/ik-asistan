@@ -1,16 +1,14 @@
 import re
-import os
 import email
 from email.message import Message
 from email.header import decode_header
 import imapclient
-from dotenv import load_dotenv
 
-load_dotenv(dotenv_path=os.path.join(os.path.dirname(__file__), "../../../.env"))
+from app.config import settings
 
-EMAIL_ADDRESS = os.getenv("EMAIL_ADDRESS")
-EMAIL_APP_PASSWORD = os.getenv("EMAIL_APP_PASSWORD")
-IMAP_SERVER = os.getenv("IMAP_SERVER")
+EMAIL_ADDRESS = settings.EMAIL_ADDRESS
+EMAIL_APP_PASSWORD = settings.EMAIL_APP_PASSWORD
+IMAP_SERVER = settings.IMAP_SERVER
 
 _QUOTE_PATTERNS = [
     r"\n_{5,}\nGönderen:.*",           # Outlook (Türkçe)

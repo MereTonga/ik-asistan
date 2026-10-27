@@ -1,15 +1,13 @@
 import os
 import pdfplumber
 import ollama
-from dotenv import load_dotenv
 
-load_dotenv(dotenv_path=os.path.join(os.path.dirname(__file__), "../../../.env"))
+from app.config import settings
 
-OLLAMA_HOST = os.getenv("OLLAMA_BASE_URL")
-OCR_MODEL = os.getenv("OCR_MODEL")
-VL_MODEL = os.getenv("VL_MODEL")
+OCR_MODEL = settings.OCR_MODEL
+VL_MODEL = settings.VL_MODEL
 
-client = ollama.Client(host=OLLAMA_HOST)
+client = ollama.Client(host=settings.OLLAMA_BASE_URL)
 
 OCR_PROMPT = """Bu görseldeki metni oku ve Markdown formatında düzenli bir şekilde yaz.
 Başlıkları # ile, alt başlıkları ## ile işaretle.
@@ -85,5 +83,5 @@ def chunk_text(text: str, min_length: int = 20) -> list[str]:
 
 
 def get_embedding(text: str) -> list[float]:
-    response = client.embed(model=os.getenv("EMBEDDING_MODEL"), input=text)
+    response = client.embed(model=settings.EMBEDDING_MODEL, input=text)
     return response["embeddings"][0]

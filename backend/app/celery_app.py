@@ -1,16 +1,11 @@
-from app.config import settings  # noqa: F401 - .env doğrulamasını başlangıçta tetiklemek için
-import os
 from celery import Celery
-from dotenv import load_dotenv
 
-load_dotenv(dotenv_path=os.path.join(os.path.dirname(__file__), "../../.env"))
-
-REDIS_URL = os.getenv("REDIS_URL")
+from app.config import settings
 
 celery_app = Celery(
     "ik_asistan",
-    broker=REDIS_URL,
-    backend=REDIS_URL,
+    broker=settings.REDIS_URL,
+    backend=settings.REDIS_URL,
     include=["app.tasks.document_tasks", "app.tasks.email_tasks"],
 )
 
@@ -22,11 +17,9 @@ celery_app.conf.update(
     enable_utc=True,
 )
 
-EMAIL_POLL_INTERVAL_SECONDS = float(os.getenv("EMAIL_POLL_INTERVAL_SECONDS", 120))
-
 celery_app.conf.beat_schedule = {
     "check-new-emails-periodically": {
         "task": "check_new_emails",
-        "schedule": EMAIL_POLL_INTERVAL_SECONDS,
+        "schedule": settings.EMAIL_POLL_INTERVAL_SECONDS,
     },
 }

@@ -1,6 +1,6 @@
-import os
 from email.utils import make_msgid
 import redis
+from app.config import settings
 from app.celery_app import celery_app
 from app.db.session import SessionLocal
 from app.logging_config import get_logger
@@ -15,7 +15,7 @@ from app.email_service.processor import (
 from app.rag.graph import build_rag_graph
 
 
-redis_client = redis.from_url(os.getenv("REDIS_URL"))
+redis_client = redis.from_url(settings.REDIS_URL)
 EMAIL_CHECK_LOCK_KEY = "email_check_lock"
 EMAIL_CHECK_LOCK_TTL = 300
 

@@ -2,18 +2,10 @@ from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 from sqlalchemy import func
 
-from app.db.session import SessionLocal
+from app.db.session import get_db
 from app.models import Message, EmailThread
 
 router = APIRouter(prefix="/analytics", tags=["analytics"])
-
-
-def get_db():
-    db = SessionLocal()
-    try:
-        yield db
-    finally:
-        db.close()
 
 
 @router.get("/summary")

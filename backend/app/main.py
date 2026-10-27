@@ -1,9 +1,10 @@
-from app.config import settings  # noqa: F401 - .env doğrulamasını başlangıçta tetiklemek için
 import os
 from fastapi import FastAPI
-from app.api import documents, test_panel, analytics, companies
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
+
+from app.config import settings, UPLOAD_DIR  # noqa: F401 - settings: .env doğrulamasını başlangıçta tetikler
+from app.api import documents, test_panel, analytics, companies
 from app import models  # noqa: F401 - tüm modelleri SQLAlchemy'ye tanıtmak için
 
 app = FastAPI(title="İK Asistanı API")
@@ -14,7 +15,6 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-UPLOAD_DIR = os.path.join(os.path.dirname(__file__), "../uploads")
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 app.mount("/uploads", StaticFiles(directory=UPLOAD_DIR), name="uploads")
 
@@ -31,4 +31,3 @@ def read_root():
 @app.get("/health")
 def health_check():
     return {"status": "healthy"}
-

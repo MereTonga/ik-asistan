@@ -5,7 +5,7 @@ from fastapi import APIRouter
 from fastapi import Depends
 from sqlalchemy.orm import Session
 
-from app.db.session import SessionLocal
+from app.db.session import get_db
 from app.tasks.email_tasks import process_single_email
 
 router = APIRouter(prefix="/test", tags=["test"])
@@ -13,14 +13,6 @@ router = APIRouter(prefix="/test", tags=["test"])
 TEST_EMAILS_PATH = os.path.join(
     os.path.dirname(__file__), "../email_service/test_data/test_emails.json"
 )
-
-
-def get_db():
-    db = SessionLocal()
-    try:
-        yield db
-    finally:
-        db.close()
 
 
 @router.get("/scenarios")
