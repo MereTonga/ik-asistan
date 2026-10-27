@@ -103,6 +103,7 @@ bash stop_dev.sh          # aktif görev kontrolü + durdur + doğrula
 | 11 | Denetim sonrası Paket 0: gizlilik ve güvenlik hızlı düzeltmeleri | ✅ Tamamlandı (26-27 Ekim 2026) |
 | 12 | Denetim sonrası Paket 1: ölü kod, gereksiz dosya ve kopya kod temizliği | ✅ Tamamlandı (27 Ekim 2026) |
 | 13 | Denetim sonrası Paket 2/A: Docker ortak volume + belge hattı dayanıklılığı + chunk'lama + panel | ✅ Tamamlandı (27 Ekim 2026) |
+| 14 | Denetim sonrası Paket 2/B: e-posta hattı dayanıklılığı | ✅ Tamamlandı (27 Ekim 2026) |
 | — | Genel değerlendirme + README + dokümantasyon kapanışı | ✅ Tamamlandı — **proje kapatıldı** |
 
 ---
@@ -430,15 +431,39 @@ search → (eşik üstü mü?) → generate_answer → groundedness_check → (d
 
 ---
 
+## FAZ 14 — Denetim Sonrası Paket 2/B (E-posta Hattı)
+
+**Motivasyon:** Denetimde e-posta tarafı "mutlu yolda çalışıyor, gerçek dünya girdilerine karşı kırılgan" olarak değerlendirilmişti (F007, F008, F010, F011, F012, F013, F024, F039, F041). Faz 6'daki tasarım kararı (Postmark/SendGrid yerine IMAP polling) korunarak hat dayanıklı hale getirildi.
+
+**Yapılanlar (14.1, `reader.py` / `processor.py` / `sender.py` / `email_tasks.py`):**
+- **İşlenen mail artık işaretleniyor.** Cevaplanan mail `\Seen`; İK'ya yönlendirilen mail `\Seen` + `\Flagged` (Gmail'de yıldız) — İK gelen kutusunda yönlendirilenleri bir bakışta görür. Daha önce hiçbir mail işaretlenmiyor, her poll tüm okunmamışları yeniden indiriyordu.
+- **Başlık-önce eleme.** Okunmamışların önce yalnızca başlıkları (`BODY.PEEK[HEADER]`) çekilir; zaten işlenmiş, oto-yanıt/bounce/liste, bilinmeyen domain ve hız sınırını aşanlar gövde indirilmeden elenir. Bilinmeyen domain ve oto-yanıt mailleri Redis'te `EMAIL_SKIP_MEMORY_DAYS` (30) gün hatırlanır; okunmamış kalırlar (İK görsün) ama her poll'da yeniden değerlendirilmezler.
+- **Oto-yanıt döngüsü koruması.** Gelen: `Auto-Submitted`, `Precedence: bulk/list/junk/auto_reply`, `X-Auto-Response-Suppress`, `X-Autoreply`, `List-Id`, `multipart/report`, `mailer-daemon`/`noreply` adresleri ve kendi adresimiz elenir. Giden: `Auto-Submitted: auto-replied`, `Precedence: bulk`, `X-Auto-Response-Suppress: All` (RFC 3834 + Exchange). Ek olarak gönderen başına saatte `EMAIL_MAX_REPLIES_PER_SENDER_PER_HOUR` (5) sınırı.
+- **Charset ve gövde dayanıklılığı.** Bilinmeyen/bozuk charset (`=?x-bogus?...`) artık `LookupError` ile tüm poll'u durdurmuyor: verilen charset → utf-8 → latin-1 sırasıyla denenir. Yalnızca `text/html` olan mailler stdlib `HTMLParser` ile düz metne çevrilir (ek bağımlılık yok); ekler atlanır. Her mail kendi `try/except` bloğunda; biri patlarsa diğerleri işlenmeye devam eder.
+- **Thread eşleştirme yeniden yazıldı.** Katman 1 artık `In-Reply-To` **ve** `References`'taki tüm kimlikleri `messages.message_id_header` ile karşılaştırıyor — çalışan botun cevabına "Yanıtla" dediğinde `In-Reply-To` botun kimliğidir, eski kod yalnızca kök mesaja baktığı için bu en yaygın senaryoda hiç eşleşmiyordu. Katlanmış (çok satırlı) başlıklar normalize ediliyor. Katman 2 `escalated` thread'leri de kapsıyor, gönderen karşılaştırması büyük/küçük harf duyarsız, konu normalizasyonu tekrarlı ve Türkçe önekleri (`Ynt:`) siliyor. **İki katman da `company_id` ile sınırlı** (önceden bir şirketin maili sahte `In-Reply-To` ile başka şirketin thread'ine bağlanabiliyordu). Pencere `THREAD_MATCH_WINDOW_DAYS` (30).
+- **Commit-önce-gönder.** Gelen mesaj önce commit edilir (idempotency damgası), sonra cevap üretilip gönderilir, en son giden mesaj commit edilir. Üretim/gönderim patlarsa damga geri alınır ve mail bir sonraki poll'da yeniden denenir; başarıyla gönderilmiş bir cevap asla ikinci kez gönderilmez. (Eski sırada SMTP gönderildikten sonra commit patlarsa aynı kişiye tekrar cevap gidiyordu.)
+- **Kilit.** `redis.lock` (token'lı; başkasının kilidi silinemez), her mailden sonra TTL yenilenir; süresi dolmuşsa uyarı loglanır. `Message-ID`'si olmayan mailler `UIDVALIDITY+UID`'den üretilen sentetik kimlikle işlenir (önceden her poll'da yeniden cevaplanabiliyordu).
+- **`References` birikimli** (gelen zincir + gelen mailin kimliği).
+
+**14.2 — `/companies/add`:** domain küçük harfe çevrilip biçimi doğrulanıyor, mükerrer domain 409 (önceden büyük harfli kayıt hiç eşleşmiyor, mükerrer kayıt 500 veriyordu).
+
+**Test:** 102 test (Faz 13 sonunda 65). `check_new_emails_task` sahte IMAP kutusu + sahte Redis ile uçtan uca test ediliyor (işaretleme, atlama belleği, sentetik kimlik, yıldız, hız sınırı, kilit, mail-başına hata izolasyonu).
+
+**Dikkat:** `EMAIL_DRY_RUN=true` iken bile IMAP tarafındaki "okundu" ve yıldız işaretleri gerçekten uygulanır. İlk denemeyi test hesabıyla yapın.
+
+**Faz 14 tamamlandı.**
+
+---
+
 ## Bilinen Sınırlamalar (Genel Özet)
 
 Proje boyunca bulunan, bilinçli olarak MVP kapsamı dışında bırakılan noktaların toplu listesi (detaylar ilgili faz bölümlerinde):
 
-1. Kimlik doğrulama (authentication) hiç yok — `company_id` sabit kodlanmış.
+1. Kimlik doğrulama (authentication) hiç yok — paneldeki şirket seçici (Faz 13) yalnızca görünüm filtresi.
 2. Domain eşleştirmesi "1 domain = 1 şirket" varsayımına dayanıyor; kişisel mail kullanan çalışanlar/stajyerler sistemle iletişim kuramıyor.
 3. Paylaşılan/genel domain (`gmail.com` vb.) bir şirketin domain'i olarak kaydedilirse veri sızıntısı riski oluşur.
 4. "Her gelen mail bir İK sorusudur" varsayımı — niyet sınıflandırması yok.
-5. Alıntı temizleme (%100 kapsayıcı değil), `References` başlığı birikimli değil.
+5. Alıntı temizleme (%100 kapsayıcı değil). (`References` artık birikimli — Faz 14.)
 6. Sadece Gmail/App Password test edildi; OAuth2, Outlook/Exchange kurumsal IMAP denenmedi.
 7. Gerçek bir reranker modeli yok — sadece groundedness check (aynı LLM ile ikinci doğrulama) eklendi; cross-encoder tabanlı ayrı bir reranker, ek VRAM maliyeti nedeniyle bilinçli olarak eklenmedi.
 8. KVKK/veri saklama-silme politikası uygulanmadı.
@@ -446,9 +471,9 @@ Proje boyunca bulunan, bilinçli olarak MVP kapsamı dışında bırakılan nokt
 10. OCR onay ekranında sadece metin düzenlenebiliyor, görsel değil.
 11. Uygulamanın kendisi container'landı (Faz 10) — ancak `run_dev.sh`/`stop_dev.sh` (Honcho+tmux geliştirme ortamı) artık compose ile **çakışıyor**, `profiles` çözümü uygulanmadı.
 12. `httpx2` gibi sonradan eklenen bağımlılıklar `requirements.txt`'te — `honcho`/`tmux` da orada, ancak `tmux` bir sistem paketi olarak README'de belirtilmeli.
-13. `GET /documents` ve `GET /documents/{id}` endpoint'leri `company_id`'ye göre filtrelemiyor — teorik olarak `document_id`'sini bilen biri başka bir şirketin belgesini görebilir. RLS uygulanmadığı için bu, veritabanı seviyesinde de kapatılmadı.
+13. `GET /documents` için `company_id` filtresi isteğe bağlı (Faz 13); `GET /documents/{id}` ve işlem endpoint'leri şirket kontrolü yapmıyor — kimlik doğrulama olmadan anlamlı bir kontrol de mümkün değil. RLS uygulanmadığı için bu, veritabanı seviyesinde de kapatılmadı.
 14. Global bir exception handler / genel hata yönetimi gözden geçirmesi yapılmadı (Faz 9'un bir parçası olarak planlanmıştı, kapsam dışına alındı).
-15. Chunk'lama naif (`\n\n` ile paragraf bölme + `min_length` filtresi) — semantik/başlık hiyerarşisine duyarlı bir bölme yapılmadı.
+15. Chunk'lama kural tabanlı (Faz 13: boş satır + Markdown başlığı, 1500 karakter pencere, 200 örtüşme, başlık ön eki) — embedding tabanlı anlamsal bölme yok.
 16. `RAG_CONFIDENCE_THRESHOLD` (0.55) hiç gerçek ölçekte kalibre edilmedi — Faz 1'deki üç örnek cümlelik ölçümden gelen bir başlangıç tahmini.
 17. Test şirketleri ve dokümanları **elle** (`psql` / `POST /companies/add` + panelden yükleme) oluşturuluyor — tekrarlanabilir bir seed/fixture betiği yok (eski `seed_test_hr_data.py` Faz 12'de silindi), `docker compose down -v` sonrası hepsi kayboluyor.
 
@@ -506,7 +531,7 @@ Bu projede bilinçli olarak kapsam dışı bırakılan, ayrı/daha sade projeler
 
 ## Şu Anki Durum / Devam Noktası
 
-**Tamamlanan:** Faz 0-10'un tamamı + Groundedness Check + CI; Ekim 2026'da denetim, Faz 11 (Paket 0), Faz 12 (Paket 1), Faz 13 (Paket 2/A). Sıradaki: Faz 14 (Paket 2/B, e-posta hattı) ve Faz 15 (Paket 2/C, şema ve küçükler).
+**Tamamlanan:** Faz 0-10'un tamamı + Groundedness Check + CI; Ekim 2026'da denetim, Faz 11 (Paket 0), Faz 12 (Paket 1), Faz 13 (Paket 2/A), Faz 14 (Paket 2/B). Sıradaki: Faz 15 (Paket 2/C, şema ve küçükler).
 **Kapsam dışı bırakılan (bilinçli karar):** Kimlik doğrulama, gerçek sunucuya deploy, PostgreSQL RLS, global exception handler — hepsi "Bilinen Sınırlamalar" listesinde gerekçeleriyle kayıtlı.
 
 **Projeye yeni bakan biri için giriş noktası:** `README.md` (kurulum + kullanım), ardından `Proje_Dokumantasyonu.md` (mimari gerekçeler), ardından bu dosya (uygulama geçmişi ve alınan kararlar).

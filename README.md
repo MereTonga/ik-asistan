@@ -69,13 +69,13 @@ Bu soruların cevapları genelde bir yerde **yazılıdır** — ama kağıt üze
 Çalışan e-posta gönderir
          │
          ▼
-Celery Beat, her N dakikada bir IMAP ile gelen kutusunu kontrol eder
+Celery Beat, her N dakikada bir IMAP ile gelen kutusunu kontrol eder (okunmamışlar, önce yalnızca başlıklar)
          │
          ▼
-Bu mail daha önce işlendi mi? (Message-ID kontrolü) ──► Evet ise atla
-         │
+Elenir mi? daha önce işlenmiş (Message-ID) · oto-yanıt / bounce / liste maili · bilinmeyen domain · hız sınırı
+         │   (elenenler okunmamış kalır; bilinmeyen domain ve oto-yanıt 30 gün hatırlanır, tekrar indirilmez)
          ▼
-Gönderen hangi şirkete ait? (e-posta domain'inden)
+Gönderen hangi şirkete ait? (e-posta domain'inden) → mailin tamamı indirilir, thread'e bağlanır
          │
          ▼
 Soru vektöre çevrilir → o şirkete ait onaylı belgelerde en yakın parçalar aranır
@@ -89,7 +89,12 @@ Soru vektöre çevrilir → o şirkete ait onaylı belgelerde en yakın parçala
                                     │
                                     ├─ HAYIR ──► "Bilgi yok, İK'ya ilettim"
                                     └─ EVET ──► Cevap e-posta ile gönderilir
+         │
+         ▼
+Gelen kutusunda mail "okundu" işaretlenir; İK'ya yönlendirilenler ayrıca YILDIZLANIR (İK bir bakışta görsün)
 ```
+
+Gönderilen cevaplar `Auto-Submitted: auto-replied` gibi standart otomatik yanıt başlıkları taşır; karşı taraftaki tatil mesajı sistemleri bize tekrar yazmaz. Aynı gönderene saatte en fazla `EMAIL_MAX_REPLIES_PER_SENDER_PER_HOUR` (varsayılan 5) cevap gider.
 
 ### Mimari Bileşenler
 
@@ -373,8 +378,10 @@ Bu proje bilinçli olarak sınırlı bir kapsamda tutulmuştur. En önemlileri:
 **E-posta**
 - Domain eşleştirmesi **"bir domain = bir şirket"** varsayımına dayanıyor. Kişisel mail adresi kullanan çalışanlar/stajyerler sistemle iletişim kuramaz.
 - Paylaşılan domain (`gmail.com` gibi) bir şirkete atanırsa, o domain'deki herkes o şirketin çalışanı sayılır — **veri sızıntısı riski.**
-- Sistem, gelen mailin **niyetini** sınıflandırmaz — her maili bir İK sorusu varsayar (iş başvurusu, spam vb. ayırt edilmez).
+- Sistem, gelen mailin **niyetini** sınıflandırmaz — her maili bir İK sorusu varsayar (iş başvurusu, spam vb. ayırt edilmez). Yalnızca oto-yanıt, teslim raporu, liste ve sistem adresi mailleri başlıklarından tanınıp elenir.
 - Alıntı temizleme (yanıtlardaki eski mail bloklarını ayıklama) regex tabanlı, %100 kapsayıcı değil.
+- Gönderenin `From` başlığı doğrulanmaz (SPF/DKIM sonuçları okunmaz); sahte `From` ile bot tetiklenebilir, cevap sahte adrese gider.
+- "İK'ya ilettim" cevabı şimdilik yalnızca gelen kutusundaki yıldız işaretine karşılık gelir; İK'ya ayrıca bildirim gönderilmez.
 - Sadece Gmail + App Password test edildi; OAuth2 ve Outlook/Exchange kurumsal IMAP denenmedi.
 
 **RAG Kalitesi**
