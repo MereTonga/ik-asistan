@@ -15,6 +15,8 @@ type Summary = {
   total_questions: number;
   escalated_count: number;
   escalation_rate: number;
+  avg_confidence_score: number | null; // cevaplarda bulunan en yüksek benzerliklerin ortalaması (eşik kalibrasyonu için)
+  grounded_rate: number | null; // groundedness kontrolünden geçen cevap oranı
   top_escalated_topics: Topic[];
 };
 
@@ -66,7 +68,7 @@ export default function AnalyticsPage() {
       <h1 className="mb-1 text-2xl font-bold">Analitik</h1>
       <p className="mb-6 text-sm text-slate-500">{selected?.name}</p>
 
-      <div className="mb-6 grid grid-cols-1 gap-4 sm:grid-cols-3">
+      <div className="mb-6 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-5">
         <Card>
           <CardHeader>
             <CardTitle className="text-sm text-slate-500">Toplam Soru</CardTitle>
@@ -87,7 +89,30 @@ export default function AnalyticsPage() {
           </CardHeader>
           <CardContent className="text-3xl font-bold">%{Math.round(summary.escalation_rate * 100)}</CardContent>
         </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-sm text-slate-500">Ort. Benzerlik</CardTitle>
+          </CardHeader>
+          <CardContent className="text-3xl font-bold">
+            {summary.avg_confidence_score === null ? "—" : summary.avg_confidence_score.toFixed(2)}
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-sm text-slate-500">Kaynakla Tutarlı</CardTitle>
+          </CardHeader>
+          <CardContent className="text-3xl font-bold">
+            {summary.grounded_rate === null ? "—" : `%${Math.round(summary.grounded_rate * 100)}`}
+          </CardContent>
+        </Card>
       </div>
+      <p className="mb-6 text-xs text-slate-500">
+        Ort. Benzerlik: cevaplanan sorularda bulunan en iyi parçanın benzerlik skoru ortalaması; güven eşiğini
+        (RAG_CONFIDENCE_THRESHOLD) kalibre etmek için kullanılır. Kaynakla Tutarlı: LLM cevaplarının groundedness
+        kontrolünden geçme oranı.
+      </p>
 
       <Card>
         <CardHeader>

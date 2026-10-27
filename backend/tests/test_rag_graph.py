@@ -106,3 +106,81 @@ def test_route_after_groundedness_check_not_grounded():
     from app.rag.graph import route_after_groundedness_check
 
     assert route_after_groundedness_check({"is_grounded": False}) == "not_grounded"
+
+# --- Faz 15: max_similarity, verdict parse, temperature -----------------------
+
+@patch("app.rag.graph.search_relevant_chunks")
+def test_search_node_records_max_similarity(mock_search):
+    from app.rag.graph import search_node
+
+    mock_search.return_value = [
+        {"chunk_text": "a", "similarity": 0.61, "is_confident": True},
+        {"chunk_text": "b", "similarity": 0.48, "is_confident": False},
+    ]
+    result = search_node({"company_id": "x", "question": "soru"})
+
+    assert result["max_similarity"] == 0.61
+    assert result["has_confident_match"] is True
+
+
+@patch("app.rag.graph.search_relevant_chunks", return_value=[])
+def test_search_node_max_similarity_is_zero_without_chunks(mock_search):
+    from app.rag.graph import search_node
+
+    result = search_node({"company_id": "x", "question": "soru"})
+    assert result["max_similarity"] == 0.0
+    assert result["has_confident_match"] is False
+
+
+def test_parse_verdict_handles_markdown_punctuation_and_case():
+    from app.rag.graph import parse_verdict
+
+    assert parse_verdict("EVET") is True
+    assert parse_verdict("**Evet**") is True
+    assert parse_verdict("Cevap: HAYIR.") is False
+    assert parse_verdict("hayır, çelişiyor") is False
+    assert parse_verdict("Yes") is True
+    assert parse_verdict("") is None
+    assert parse_verdict("Belki, emin değilim") is None
+
+
+@patch("app.rag.graph.client")
+def test_groundedness_check_treats_unparseable_verdict_as_not_grounded(mock_client, monkeypatch):
+    import app.rag.graph as graph_module
+
+    monkeypatch.setattr(graph_module, "GROUNDEDNESS_CHECK_ENABLED", True)
+    mock_client.chat.return_value = {"message": {"content": "Hmm, kaynakla tam örtüşmüyor gibi"}}
+
+    result = graph_module.groundedness_check_node({
+        "retrieved_chunks": [{"chunk_text": "x", "is_confident": True}],
+        "answer": "y",
+    })
+
+    assert result["is_grounded"] is False
+
+
+@patch("app.rag.graph.client")
+def test_groundedness_check_accepts_decorated_evet(mock_client, monkeypatch):
+    import app.rag.graph as graph_module
+
+    monkeypatch.setattr(graph_module, "GROUNDEDNESS_CHECK_ENABLED", True)
+    mock_client.chat.return_value = {"message": {"content": "**EVET**"}}
+
+    result = graph_module.groundedness_check_node({
+        "retrieved_chunks": [{"chunk_text": "x", "is_confident": True}],
+        "answer": "y",
+    })
+
+    assert result["is_grounded"] is True
+
+
+@patch("app.rag.graph.client")
+def test_generate_answer_uses_low_temperature_and_no_thinking(mock_client):
+    from app.rag.graph import generate_answer_node
+
+    mock_client.chat.return_value = {"message": {"content": "cevap"}}
+    generate_answer_node({"question": "q", "retrieved_chunks": [{"chunk_text": "c", "is_confident": True}]})
+
+    kwargs = mock_client.chat.call_args.kwargs
+    assert kwargs["options"]["temperature"] == 0.2
+    assert kwargs["think"] is False

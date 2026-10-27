@@ -124,6 +124,9 @@ def process_single_email(email_data: dict, db, company_override=None, send_email
                 sender_type="ai_system",
                 body=rag_result["answer"],
                 was_escalated=rag_result["was_escalated"],
+                # Eşik kalibrasyonu ve analitik için: en yüksek benzerlik ve groundedness sonucu
+                confidence_score=rag_result.get("max_similarity"),
+                is_grounded=rag_result.get("is_grounded"),
             )
             db.add(outgoing_message)
             if rag_result["was_escalated"]:
@@ -140,7 +143,7 @@ def process_single_email(email_data: dict, db, company_override=None, send_email
     }
 
 
-@celery_app.task(name="check_new_emails")
+@celery_app.task(name="check_new_emails", ignore_result=True)
 def check_new_emails_task():
     """
     Celery Beat tarafından periyodik olarak tetiklenir. Gelen kutusundaki okunmamış mailleri

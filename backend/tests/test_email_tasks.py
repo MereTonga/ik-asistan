@@ -284,3 +284,22 @@ def test_check_new_emails_task_isolates_per_mail_errors(mock_build_graph, mock_s
     assert result == {"processed": 0, "skipped": 0, "errors": 2}
     assert inbox.marked == {}  # başarısız mailler okunmamış kalır, sonraki poll yeniden dener
     assert fake_redis.locks == set()
+
+
+@patch("app.tasks.email_tasks.send_reply", return_value="<reply-9@x>")
+@patch("app.tasks.email_tasks.build_rag_graph")
+def test_process_single_email_persists_confidence_and_groundedness(mock_build_graph, mock_send_reply, db_session, test_company):
+    from app.tasks.email_tasks import process_single_email
+    from app.models import Message
+
+    class Graph:
+        def invoke(self, state):
+            return {**state, "answer": "Cevap", "was_escalated": False, "max_similarity": 0.734, "is_grounded": True}
+
+    mock_build_graph.return_value = Graph()
+
+    process_single_email(_mail(message_id="<conf-1@x>"), db_session)
+
+    outgoing = db_session.query(Message).filter(Message.message_id_header == "<reply-9@x>").one()
+    assert outgoing.confidence_score == 0.734
+    assert outgoing.is_grounded is True

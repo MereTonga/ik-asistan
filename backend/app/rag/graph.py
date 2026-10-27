@@ -1,3 +1,4 @@
+import re
 from typing import TypedDict
 import ollama
 from langgraph.graph import StateGraph, END
@@ -34,14 +35,28 @@ Eğer CEVAP, kaynakla çelişen ya da kaynakta hiç olmayan somut bir bilgi/say�
 SADECE "EVET" ya da "HAYIR" yaz, başka hiçbir şey yazma."""
 
 # 1) STATE TANIMI — akış boyunca taşınacak veri paketi
-class RAGState(TypedDict):
+class RAGState(TypedDict, total=False):
     company_id: str
     question: str
     retrieved_chunks: list       # arama sonucu bulunanlar
     has_confident_match: bool    # eşik üstünde en az bir chunk var mı
+    max_similarity: float        # en iyi chunk'ın benzerliği (analitik / eşik kalibrasyonu için kaydedilir)
     answer: str                  # üretilen cevap veya yönlendirme mesajı
     was_escalated: bool          # insana yönlendirildi mi
-    is_grounded: bool            # üretilen cevap dokümanla destekleniyor mu (grounded)
+    is_grounded: bool            # üretilen cevap dokümanla destekleniyor mu (LLM'e hiç gidilmediyse yok)
+
+
+_VERDICT_RE = re.compile(r"\b(EVET|HAYIR|YES|NO)\b")
+
+
+def parse_verdict(text: str | None) -> bool | None:
+    """Groundedness cevabını okur: EVET/YES → True, HAYIR/NO → False, anlaşılamıyorsa None.
+    '**Evet**', 'Cevap: HAYIR.' gibi süslü çıktılarda da çalışır; ilk net karar sözcüğü esas alınır."""
+    cleaned = (text or "").replace("ı", "I").upper()
+    match = _VERDICT_RE.search(cleaned)
+    if not match:
+        return None
+    return match.group(1) in ("EVET", "YES")
 
 
 # 2) NODE'LAR — her biri State alır, güncellenmiş State döner
@@ -54,8 +69,9 @@ def search_node(state: RAGState) -> RAGState:
     finally:
         db.close()
     has_confident = any(c["is_confident"] for c in chunks)
-    logger.info(f"search_node: has_confident_match={has_confident}, chunk_count={len(chunks)}")
-    return {**state, "retrieved_chunks": chunks, "has_confident_match": has_confident}
+    max_similarity = max((c["similarity"] for c in chunks), default=0.0)
+    logger.info(f"search_node: has_confident_match={has_confident}, chunk_count={len(chunks)}, max_similarity={max_similarity}")
+    return {**state, "retrieved_chunks": chunks, "has_confident_match": has_confident, "max_similarity": max_similarity}
 
 
 def generate_answer_node(state: RAGState) -> RAGState:
@@ -76,11 +92,14 @@ DOKÜMAN:
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": state["question"]},
         ],
-        options={"num_ctx": CONTEXT_SIZE},
+        # Düşük sıcaklık: aynı soruya tutarlı cevap; 0 değil ki ifade tamamen mekanikleşmesin
+        options={"num_ctx": CONTEXT_SIZE, "temperature": 0.2},
         think=False,
     )
-    logger.info(f"generate_answer_node: cevap üretildi -> '{response['message']['content']}...'")
-    return {**state, "answer": response["message"]["content"], "was_escalated": False}
+    answer = response["message"]["content"]
+    logger.info(f"generate_answer_node: cevap üretildi ({len(answer)} karakter)")
+    logger.debug(f"generate_answer_node: cevap -> {answer!r}")
+    return {**state, "answer": answer, "was_escalated": False}
 
 
 def escalate_node(state: RAGState) -> RAGState:
@@ -104,9 +123,13 @@ def groundedness_check_node(state: RAGState) -> RAGState:
         think=False,
     )
 
-    verdict = response["message"]["content"].strip().upper()
-    is_grounded = verdict.startswith("EVET")
-    logger.info(f"groundedness_check_node: verdict={verdict}, is_grounded={is_grounded}")
+    raw_verdict = response["message"]["content"]
+    verdict = parse_verdict(raw_verdict)
+    if verdict is None:
+        # Karar okunamadı: güvenli taraf, cevabı göndermemek (escalate)
+        logger.warning(f"groundedness_check_node: karar anlaşılamadı, escalate ediliyor -> {raw_verdict!r}")
+    is_grounded = bool(verdict)
+    logger.info(f"groundedness_check_node: verdict={raw_verdict.strip()[:40]!r}, is_grounded={is_grounded}")
     return {**state, "is_grounded": is_grounded}
 
 # 3) KOŞULLU YÖNLENDİRME — search_node'dan sonra hangi node'a gidileceğine karar verir
