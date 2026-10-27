@@ -1,5 +1,6 @@
 import os
 import re
+import zlib
 import pdfplumber
 import ollama
 
@@ -31,6 +32,48 @@ def _pdf_has_text_layer(file_path: str) -> tuple[bool, str]:
     return has_layer, full_text
 
 
+_CJK_RE = re.compile(r"[぀-ヿ㐀-䶿一-鿿가-힯]")
+_LETTER_RE = re.compile(r"[^\W\d_]", re.UNICODE)
+# OCR modelinin, metin bulamayınca yönergeyi geri yazdığını ele veren parçalar
+_PROMPT_ECHO_MARKERS = ("markdown tablo formatında", "sadece görseldeki içeriği yaz", "başlıkları # ile")
+
+OCR_MIN_CHARS = 20
+OCR_MAX_CJK_RATIO = 0.2
+OCR_MIN_COMPRESSION_RATIO = 0.12  # doğal metin ~0.35-0.6'ya sıkışır; tekrarlı saçmalık 0.1'in altına iner
+OCR_MIN_UNIQUE_LINE_RATIO = 0.5
+
+
+def assess_ocr_output(text: str) -> str | None:
+    """OCR çıktısının güvenilir olup olmadığını sezgisel olarak değerlendirir.
+    Sorun varsa Türkçe bir sebep döner, yoksa None. Yazısız bir görsel verildiğinde
+    modeller yönergeyi tekrar edip Çince karakterlere kayabiliyor; bunu onaya sunmak yerine
+    belgeyi 'Hatalı' yapıp kullanıcıya nedenini söylemek daha doğru."""
+    stripped = (text or "").strip()
+    if len(stripped) < OCR_MIN_CHARS:
+        return "görselde okunabilir metin bulunamadı"
+
+    lowered = stripped.lower()
+    if any(marker in lowered for marker in _PROMPT_ECHO_MARKERS):
+        return "OCR modeli metin yerine yönergeyi tekrar etti (görselde okunabilir metin yok)"
+
+    letters = _LETTER_RE.findall(stripped)
+    if letters:
+        cjk_ratio = len(_CJK_RE.findall(stripped)) / len(letters)
+        if cjk_ratio > OCR_MAX_CJK_RATIO:
+            return f"çıktının %{int(cjk_ratio * 100)}'i Çince/Japonca/Korece karakter; model saçmalamış olabilir"
+
+    lines = [line.strip() for line in stripped.splitlines() if line.strip()]
+    if len(lines) >= 5 and len(set(lines)) / len(lines) < OCR_MIN_UNIQUE_LINE_RATIO:
+        return "çıktı aynı satırları tekrar ediyor (aşırı tekrar)"
+
+    if len(stripped) >= 200:
+        compressed_ratio = len(zlib.compress(stripped.encode("utf-8"))) / len(stripped.encode("utf-8"))
+        if compressed_ratio < OCR_MIN_COMPRESSION_RATIO:
+            return "çıktı tekrarlayan kalıplardan oluşuyor (aşırı tekrar)"
+
+    return None
+
+
 def _run_ocr(file_path: str, model_name: str) -> str:
     response = client.chat(
         model=model_name,
@@ -42,7 +85,14 @@ def _run_ocr(file_path: str, model_name: str) -> str:
             }
         ],
     )
-    return response["message"]["content"]
+    text = response["message"]["content"]
+    problem = assess_ocr_output(text)
+    if problem:
+        raise ValueError(
+            f"OCR çıktısı güvenilir değil: {problem}. Daha net bir görsel yükleyin ya da diğer kalite "
+            f"seçeneğiyle yeniden işleyin."
+        )
+    return text
 
 
 def process_document(file_path: str, document_quality: str | None = None) -> dict:

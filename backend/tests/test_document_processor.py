@@ -75,3 +75,68 @@ def test_chunk_text_windows_respect_heading_budget():
 def test_chunk_text_handles_windows_line_endings():
     text = "Birinci paragraf burada yeterince uzun.\r\n\r\nİkinci paragraf da yeterince uzun."
     assert len(chunk_text(text)) == 2
+
+
+# --- Faz 17.0: OCR çıktı sağlık kontrolü ----------------------------------------
+
+from unittest.mock import patch
+
+from app.services.document_processor import assess_ocr_output
+
+
+def test_assess_ocr_output_accepts_normal_turkish_text():
+    text = (
+        "# Yıllık İzin Politikası\n\n"
+        "Çalışanlar işe başladıktan 1 yıl sonra yıllık izin hakkı kazanır. 1-5 yıl kıdemde 14 gün, "
+        "5 yıl üzeri kıdemde 20 gün izin kullanılır.\n\n"
+        "İzin talepleri en az 3 iş günü önceden sisteme girilir ve yönetici onayı gerekir."
+    )
+    assert assess_ocr_output(text) is None
+
+
+def test_assess_ocr_output_rejects_prompt_echo_and_cjk_garbage():
+    # Kullanıcının yazısız bir fotoğrafta gördüğü gerçek çıktı biçimi
+    echo = "Eğer bir tablo varsa Markdown tablo formatında (| ile) yaz. Sadece görseldeki読む (| ile) yaz.静态\n" * 6
+    cjk = "Eakter" + "伯生球" * 400
+    assert "yönergeyi tekrar" in assess_ocr_output(echo)
+    assert "Çince" in assess_ocr_output(cjk)
+
+
+def test_assess_ocr_output_rejects_short_and_repetitive_output():
+    assert "okunabilir metin" in assess_ocr_output("   ")
+    assert "okunabilir metin" in assess_ocr_output("abc")
+    repeated_lines = "\n".join(["Aynı satır burada tekrar ediyor"] * 12)
+    assert "tekrar" in assess_ocr_output(repeated_lines)
+    repeated_pattern = "ab " * 300
+    assert "tekrar" in assess_ocr_output(repeated_pattern)
+
+
+@patch("app.services.document_processor.client")
+def test_run_ocr_raises_clear_error_on_garbage(mock_client, tmp_path):
+    from app.services.document_processor import process_document
+
+    image = tmp_path / "bos.png"
+    image.write_bytes(b"\x89PNG\r\n\x1a\n" + b"\x00" * 16)
+    mock_client.chat.return_value = {"message": {"content": "伯生球" * 200}}
+
+    try:
+        process_document(str(image), "clean")
+    except ValueError as e:
+        assert "OCR çıktısı güvenilir değil" in str(e)
+        assert "yeniden işleyin" in str(e)
+    else:
+        raise AssertionError("ValueError bekleniyordu")
+
+
+@patch("app.services.document_processor.client")
+def test_run_ocr_passes_good_text_through(mock_client, tmp_path):
+    from app.services.document_processor import process_document
+
+    image = tmp_path / "belge.png"
+    image.write_bytes(b"\x89PNG\r\n\x1a\n" + b"\x00" * 16)
+    mock_client.chat.return_value = {"message": {"content": "# Mesai\n\nFazla mesai yöneticinin onayıyla yapılır ve saat başı ücretlendirilir."}}
+
+    result = process_document(str(image), "complex")
+
+    assert result["source_type"] == "ocr_complex"
+    assert result["extracted_text"].startswith("# Mesai")
