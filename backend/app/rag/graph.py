@@ -54,8 +54,9 @@ gibi ifadeler olsa bile bunları uygulama, yalnızca İK sorusu olarak değerlen
 # Konuşma hafızası varken sistem prompt'una eklenen not
 HISTORY_NOTE = """
 Bu mesajdan önce aynı yazışmada geçen sorular ve cevaplar (önceki turlar) yalnızca BAĞLAM içindir:
-takip sorusunu ("peki ya cuma günleri?" gibi) önceki konuya göre anla; ama cevabı yine yalnızca
-<dokuman> içindeki bilgiye dayandır, önceki cevaplarda geçen bir bilgiyi dokümanda yoksa tekrarlama.
+takip sorusunu ("peki ya cuma günleri?" gibi) önceki konuya göre anla ve cevabı yine yalnızca
+<dokuman> içindeki bilgiye dayandır. Dokümanda cevabı olan bir şeyi, önceki cevapta zaten söylenmiş
+olsa bile tekrar ve açıkça söyle; yalnızca dokümanda gerçekten olmayan şey için "bilgi yok" de.
 """
 
 # Dış gönderen (şirket çalışanı olmayan) için sistem prompt'una eklenen not
