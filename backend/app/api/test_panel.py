@@ -54,5 +54,6 @@ def simulate_email(scenario_index: int, company_id: str, db: Session = Depends(g
         "body": scenario["body"],
     }
 
-    result = process_single_email(email_data, db, company_override=company)
+    # Simülasyon hiçbir koşulda gerçek mail göndermez (EMAIL_DRY_RUN'dan bağımsız)
+    result = process_single_email(email_data, db, company_override=company, send_email=False)
     return result

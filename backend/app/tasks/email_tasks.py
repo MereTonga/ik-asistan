@@ -1,4 +1,5 @@
 import os
+from email.utils import make_msgid
 import redis
 from app.celery_app import celery_app
 from app.db.session import SessionLocal
@@ -20,15 +21,19 @@ EMAIL_CHECK_LOCK_TTL = 300
 
 logger = get_logger(__name__)
 
-def process_single_email(email_data: dict, db, company_override=None) -> dict:
+def process_single_email(email_data: dict, db, company_override=None, send_email: bool = True) -> dict:
     """
     Tek bir e-postayı baştan sona işler: idempotency, thread eşleştirme,
     RAG, cevaplama, kayıt. Hem gerçek IMAP akışı hem de /test simülasyonu
     bu fonksiyonu kullanır - mantık tek bir yerde yaşar.
-    
+
     company_override: Verilirse, domain'e göre arama yapılmaz, doğrudan bu
     şirket kullanılır (test panelinde, çeşitli domain'lerden gelen simüle
     edilmiş maillerin tek bir test şirketine bağlanabilmesi için).
+
+    send_email: False verilirse SMTP'ye hiç gidilmez (EMAIL_DRY_RUN'dan
+    bağımsız). Test paneli bunu daima False geçer - simülasyon, senaryo
+    dosyasındaki adreslere gerçek mail gönderemez.
     """
     if is_already_processed(email_data["message_id"], db):
         return {"status": "skipped", "reason": "already_processed"}
@@ -57,12 +62,16 @@ def process_single_email(email_data: dict, db, company_override=None) -> dict:
         "was_escalated": False,
     })
 
-    sent_message_id = send_reply(
-        to_address=email_data["from_address"],
-        subject=email_data["subject"],
-        body=rag_result["answer"],
-        in_reply_to_message_id=email_data["message_id"],
-    )
+    if send_email:
+        sent_message_id = send_reply(
+            to_address=email_data["from_address"],
+            subject=email_data["subject"],
+            body=rag_result["answer"],
+            in_reply_to_message_id=email_data["message_id"],
+        )
+    else:
+        # Simülasyon: gönderim yok, kayıt için yine de benzersiz bir Message-ID üretilir
+        sent_message_id = make_msgid()
 
     outgoing_message = Message(
         thread_id=thread.id,
