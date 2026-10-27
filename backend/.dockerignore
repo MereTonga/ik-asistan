@@ -10,5 +10,6 @@ __pycache__/
 *.pyc
 celerybeat-schedule*
 *.md
+!seed/*.md
 .dockerignore
 Dockerfile
