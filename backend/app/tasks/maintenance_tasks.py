@@ -46,3 +46,44 @@ def close_stale_threads_task():
         return {"resolved": count}
     finally:
         db.close()
+
+
+def purge_old_threads(db, now: datetime | None = None) -> int:
+    """Veri saklama (KVKK): son mesajı THREAD_RETENTION_DAYS günden eski thread'leri, mesajlarıyla
+    birlikte kalıcı olarak siler. Durumuna bakılmaz (open/escalated/resolved). 0 ise kapalıdır.
+    Silinen thread sayısını döner."""
+    retention_days = settings.THREAD_RETENTION_DAYS
+    if retention_days <= 0:
+        return 0
+
+    now = now or datetime.now(timezone.utc)
+    cutoff = now - timedelta(days=retention_days)
+
+    last_message = (
+        db.query(Message.thread_id.label("thread_id"), func.max(Message.created_at).label("last_at"))
+        .group_by(Message.thread_id)
+        .subquery()
+    )
+    old_threads = (
+        db.query(EmailThread)
+        .outerjoin(last_message, last_message.c.thread_id == EmailThread.id)
+        .filter(func.coalesce(last_message.c.last_at, EmailThread.created_at) < cutoff)
+        .all()
+    )
+    for thread in old_threads:
+        db.delete(thread)  # mesajlar ORM cascade ile silinir
+    db.commit()
+    return len(old_threads)
+
+
+@celery_app.task(name="purge_old_threads", ignore_result=True)
+def purge_old_threads_task():
+    """Celery Beat: günde bir kez saklama süresi dolan yazışmaları siler (THREAD_RETENTION_DAYS > 0 ise)."""
+    db = SessionLocal()
+    try:
+        count = purge_old_threads(db)
+        if count:
+            logger.info(f"purge_old_threads: {count} thread ve mesajları silindi (saklama süresi doldu)")
+        return {"purged": count}
+    finally:
+        db.close()

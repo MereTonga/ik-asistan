@@ -59,3 +59,35 @@ def test_close_stale_threads_uses_latest_message_not_thread_creation(db_session,
     assert close_stale_threads(db_session) == 0
     db_session.refresh(thread)
     assert thread.status == ThreadStatus.OPEN
+
+
+# --- Faz 16.4: veri saklama ----------------------------------------------------
+
+def test_purge_old_threads_is_disabled_by_default(db_session, test_company, monkeypatch):
+    import app.tasks.maintenance_tasks as maintenance_module
+    from app.tasks.maintenance_tasks import purge_old_threads
+
+    monkeypatch.setattr(maintenance_module.settings, "THREAD_RETENTION_DAYS", 0)
+    _thread_with_message(db_session, test_company, ThreadStatus.RESOLVED, 400, "cok-eski")
+
+    assert purge_old_threads(db_session) == 0
+    assert db_session.query(EmailThread).count() == 1
+
+
+def test_purge_old_threads_deletes_threads_and_messages_past_retention(db_session, test_company, monkeypatch):
+    import app.tasks.maintenance_tasks as maintenance_module
+    from app.tasks.maintenance_tasks import purge_old_threads
+
+    monkeypatch.setattr(maintenance_module.settings, "THREAD_RETENTION_DAYS", 90)
+    old = _thread_with_message(db_session, test_company, ThreadStatus.RESOLVED, 120, "eski")
+    old_escalated = _thread_with_message(db_session, test_company, ThreadStatus.ESCALATED, 200, "eski-yonlendirilmis")
+    recent = _thread_with_message(db_session, test_company, ThreadStatus.OPEN, 10, "yeni")
+    old_ids = {old.id, old_escalated.id}
+
+    purged = purge_old_threads(db_session)
+
+    assert purged == 2
+    remaining = {t.id for t in db_session.query(EmailThread)}
+    assert remaining == {recent.id}
+    assert db_session.query(Message).filter(Message.thread_id.in_(old_ids)).count() == 0
+    assert db_session.query(Message).filter(Message.thread_id == recent.id).count() == 1

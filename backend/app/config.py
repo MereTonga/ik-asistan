@@ -51,6 +51,7 @@ class Settings(BaseSettings):
     EMAIL_SKIP_MEMORY_DAYS: int = 30  # atlanan maillerin (bilinmeyen domain, oto-yanıt) Redis'te hatırlanma süresi
     THREAD_MATCH_WINDOW_DAYS: int = 30  # aynı gönderen + aynı konu kaç gün içinde eski thread'e bağlanır
     THREAD_RESOLVE_AFTER_DAYS: int = 14  # bu kadar gün hareketsiz kalan 'open' thread'ler 'resolved' olur
+    THREAD_RETENTION_DAYS: int = 0  # KVKK saklama süresi: son mesajı bu kadar günden eski thread'ler mesajlarıyla silinir; 0 = kapalı
 
     # Celery
     TASK_SOFT_TIME_LIMIT_SECONDS: int = 1800  # tek bir görev (örn. karmaşık OCR) en fazla bu kadar sürebilir

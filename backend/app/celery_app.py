@@ -36,4 +36,8 @@ celery_app.conf.beat_schedule = {
         "task": "close_stale_threads",
         "schedule": crontab(hour=3, minute=30),
     },
+    "purge-old-threads-daily": {
+        "task": "purge_old_threads",
+        "schedule": crontab(hour=4, minute=0),
+    },
 }
