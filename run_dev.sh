@@ -55,7 +55,9 @@ wait_for() {
 
 print_step "🚀 1/4 Docker servisleri başlatılıyor..."
 
-docker compose up -d
+# Yalnızca altyapı (Postgres + Redis). Uygulama servisleri (api/worker/beat/frontend)
+# bu modda Honcho ile host'ta çalışır; compose'daki kopyaları başlatılırsa portlar çakışır.
+docker compose up -d postgres redis
 
 if [ $? -ne 0 ]; then
   echo "❌ Docker servisleri başlatılamadı."
