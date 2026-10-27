@@ -12,7 +12,7 @@ from app.email_service.processor import (
     is_already_processed,
 )
 from app.email_service.reader import ImapInbox, parse_email, parse_headers
-from app.email_service.sender import send_reply
+from app.email_service.sender import send_hr_notification, send_reply
 from app.logging_config import get_logger
 from app.models import EmailThread, Message
 from app.rag.graph import build_rag_graph
@@ -47,6 +47,36 @@ def _rate_limit_exceeded(sender: str) -> bool:
     if count == 1:
         redis_client.expire(key, 3600)
     return count > settings.EMAIL_MAX_REPLIES_PER_SENDER_PER_HOUR
+
+
+def _escalation_reason(rag_result: dict) -> str:
+    if not rag_result.get("has_confident_match"):
+        return "belgelerde soruya yeterince benzer içerik bulunamadı"
+    if rag_result.get("is_grounded") is False:
+        return "üretilen cevap kaynak belgeyle tutarlı bulunmadı"
+    return "otomatik cevap üretilemedi"
+
+
+def _notify_hr_if_configured(company, email_data: dict, rag_result: dict) -> None:
+    """Şirketin (ya da genel ayarın) İK bildirim adresi varsa ve bu adres botun kendi kutusu değilse
+    yönlendirilen soruyu oraya iletir. Bildirim hatası ana akışı bozmaz (cevap zaten gönderildi)."""
+    address = (getattr(company, "hr_notify_email", None) or settings.HR_NOTIFY_EMAIL or "").strip().lower()
+    if not address:
+        return
+    if address == (settings.EMAIL_ADDRESS or "").strip().lower():
+        # Aynı kutu: mail zaten orada ve yıldızlı; ayrıca bildirim göndermek kopya üretir
+        return
+    try:
+        send_hr_notification(
+            hr_address=address,
+            employee_address=email_data["from_address"],
+            subject=email_data["subject"],
+            question=email_data["body"],
+            reason=_escalation_reason(rag_result),
+        )
+        logger.info(f"İK bildirimi gönderildi -> {address} (gönderen: {email_data['from_address']})")
+    except Exception as e:
+        logger.error(f"İK bildirimi gönderilemedi ({address}): {e}", exc_info=True)
 
 
 def _discard_incoming_stamp(db, incoming_id, thread_id, thread_was_new) -> None:
@@ -135,6 +165,10 @@ def process_single_email(email_data: dict, db, company_override=None, send_email
     except Exception:
         _discard_incoming_stamp(db, incoming_id, thread_id, is_new)
         raise
+
+    # Yönlendirme bildirimi: yalnızca gerçek akışta (simülasyonda değil), kayıt tamamlandıktan sonra
+    if rag_result["was_escalated"] and send_email:
+        _notify_hr_if_configured(company, email_data, rag_result)
 
     return {
         "status": "processed",

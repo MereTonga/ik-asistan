@@ -303,3 +303,103 @@ def test_process_single_email_persists_confidence_and_groundedness(mock_build_gr
     outgoing = db_session.query(Message).filter(Message.message_id_header == "<reply-9@x>").one()
     assert outgoing.confidence_score == 0.734
     assert outgoing.is_grounded is True
+
+
+# --- Faz 17.2: İK bildirimi ----------------------------------------------------
+
+def _escalating_graph():
+    class Graph:
+        def invoke(self, state):
+            return {**state, "answer": "İK'ya ilettim", "was_escalated": True, "has_confident_match": False, "max_similarity": 0.3}
+
+    return Graph()
+
+
+@patch("app.tasks.email_tasks.send_hr_notification")
+@patch("app.tasks.email_tasks.send_reply", return_value="<r-n1@x>")
+@patch("app.tasks.email_tasks.build_rag_graph")
+def test_escalation_notifies_company_hr_address(mock_build_graph, mock_send_reply, mock_notify, db_session, test_company):
+    from app.tasks.email_tasks import process_single_email
+
+    mock_build_graph.return_value = _escalating_graph()
+    test_company.hr_notify_email = "ik.muduru@testcompany.com"
+    db_session.flush()
+
+    process_single_email(_mail(message_id="<n1@x>", subject="Prim"), db_session)
+
+    mock_notify.assert_called_once()
+    kwargs = mock_notify.call_args.kwargs
+    assert kwargs["hr_address"] == "ik.muduru@testcompany.com"
+    assert kwargs["employee_address"] == "calisan@testcompany.com"
+    assert "benzer içerik" in kwargs["reason"]
+
+
+@patch("app.tasks.email_tasks.send_hr_notification")
+@patch("app.tasks.email_tasks.send_reply", return_value="<r-n2@x>")
+@patch("app.tasks.email_tasks.build_rag_graph")
+def test_escalation_falls_back_to_global_setting(mock_build_graph, mock_send_reply, mock_notify, monkeypatch, db_session, test_company):
+    import app.tasks.email_tasks as tasks_module
+    from app.tasks.email_tasks import process_single_email
+
+    mock_build_graph.return_value = _escalating_graph()
+    monkeypatch.setattr(tasks_module.settings, "HR_NOTIFY_EMAIL", "ik-genel@sirket.com")
+
+    process_single_email(_mail(message_id="<n2@x>"), db_session)
+
+    assert mock_notify.call_args.kwargs["hr_address"] == "ik-genel@sirket.com"
+
+
+@patch("app.tasks.email_tasks.send_hr_notification")
+@patch("app.tasks.email_tasks.send_reply")
+@patch("app.tasks.email_tasks.build_rag_graph")
+def test_no_notification_without_address_or_when_same_mailbox(mock_build_graph, mock_send_reply, mock_notify, monkeypatch, db_session, test_company):
+    import app.tasks.email_tasks as tasks_module
+    from app.tasks.email_tasks import process_single_email
+
+    mock_build_graph.return_value = _escalating_graph()
+    mock_send_reply.side_effect = _unique_ids()
+    monkeypatch.setattr(tasks_module.settings, "HR_NOTIFY_EMAIL", None)
+    process_single_email(_mail(message_id="<n3@x>"), db_session)
+    mock_notify.assert_not_called()
+
+    # Aynı kutu: bildirim kopya üretir, gönderilmez
+    monkeypatch.setattr(tasks_module.settings, "EMAIL_ADDRESS", "ik@sirket.com")
+    monkeypatch.setattr(tasks_module.settings, "HR_NOTIFY_EMAIL", "IK@sirket.com")
+    process_single_email(_mail(message_id="<n4@x>"), db_session)
+    mock_notify.assert_not_called()
+
+
+@patch("app.tasks.email_tasks.send_hr_notification")
+@patch("app.tasks.email_tasks.send_reply")
+@patch("app.tasks.email_tasks.build_rag_graph")
+def test_no_notification_in_simulation_and_for_answered_mail(mock_build_graph, mock_send_reply, mock_notify, db_session, test_company):
+    from app.tasks.email_tasks import process_single_email
+
+    test_company.hr_notify_email = "ik.muduru@testcompany.com"
+    db_session.flush()
+
+    mock_build_graph.return_value = _escalating_graph()
+    process_single_email(_mail(message_id="<n5@x>"), db_session, company_override=test_company, send_email=False)
+    mock_notify.assert_not_called()
+
+    mock_build_graph.return_value = _fake_graph(was_escalated=False)
+    mock_send_reply.return_value = "<r-n6@x>"
+    process_single_email(_mail(message_id="<n6@x>"), db_session)
+    mock_notify.assert_not_called()
+
+
+@patch("app.tasks.email_tasks.send_hr_notification", side_effect=ConnectionError("SMTP kapalı"))
+@patch("app.tasks.email_tasks.send_reply", return_value="<r-n7@x>")
+@patch("app.tasks.email_tasks.build_rag_graph")
+def test_notification_failure_does_not_break_processing(mock_build_graph, mock_send_reply, mock_notify, db_session, test_company):
+    from app.tasks.email_tasks import process_single_email
+    from app.models import Message
+
+    mock_build_graph.return_value = _escalating_graph()
+    test_company.hr_notify_email = "ik.muduru@testcompany.com"
+    db_session.flush()
+
+    result = process_single_email(_mail(message_id="<n7@x>"), db_session)
+
+    assert result["status"] == "processed"
+    assert db_session.query(Message).filter(Message.message_id_header == "<r-n7@x>").count() == 1

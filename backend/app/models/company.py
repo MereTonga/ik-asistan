@@ -12,6 +12,8 @@ class Company(Base):
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     name = Column(String, nullable=False)
     email_domain = Column(String, nullable=False, unique=True)
+    # İK'ya yönlendirilen sorular bu adrese bildirilir (boşsa HR_NOTIFY_EMAIL ayarı, o da boşsa yalnızca yıldız)
+    hr_notify_email = Column(String, nullable=True)
     created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
 
     def __repr__(self):

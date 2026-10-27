@@ -44,6 +44,57 @@ def build_reply_message(
     return msg
 
 
+def build_hr_notification(
+    hr_address: str,
+    employee_address: str,
+    subject: str,
+    question: str,
+    reason: str,
+) -> MIMEText:
+    """Yönlendirilen bir soruyu İK'nın ayrı adresine bildiren mail. `Reply-To` çalışanın adresi olduğu
+    için İK "Yanıtla" dediğinde doğrudan çalışana yazar. Oto-yanıt başlıkları döngüyü önler."""
+    body = (
+        "Merhaba,\n\n"
+        "İK Asistanı aşağıdaki soruyu otomatik cevaplayamadı ve çalışana 'talebiniz İK ekibimize iletildi' yanıtı gönderdi.\n\n"
+        f"Çalışan: {employee_address}\n"
+        f"Konu: {subject}\n"
+        f"Neden yönlendirildi: {reason}\n\n"
+        "Soru:\n"
+        f"{question.strip()}\n\n"
+        "Bu maili yanıtlarsanız cevabınız doğrudan çalışana gider.\n"
+    )
+    msg = MIMEText(body, "plain", "utf-8")
+    msg["Subject"] = f"[İK Asistanı] Yönlendirilen soru: {subject}"
+    msg["From"] = EMAIL_ADDRESS
+    msg["To"] = hr_address
+    msg["Reply-To"] = employee_address
+    msg["Message-ID"] = make_msgid()
+    msg["Auto-Submitted"] = "auto-generated"
+    msg["Precedence"] = "bulk"
+    msg["X-Auto-Response-Suppress"] = "All"
+    return msg
+
+
+def send_hr_notification(hr_address: str, employee_address: str, subject: str, question: str, reason: str) -> str:
+    """İK bildirimini gönderir (DRY_RUN'da yalnızca konsola yazar). Dönüş: Message-ID."""
+    msg = build_hr_notification(hr_address, employee_address, subject, question, reason)
+
+    if EMAIL_DRY_RUN:
+        print("=" * 60)
+        print("[DRY RUN] İK bildirimi GÖNDERİLMEDİ. İçerik:")
+        print(f"Kime: {hr_address} (Reply-To: {employee_address})")
+        print(f"Konu: {msg['Subject']}")
+        print("=" * 60)
+        return msg["Message-ID"]
+
+    with smtplib.SMTP(SMTP_SERVER, SMTP_PORT) as server:
+        server.starttls()
+        server.login(EMAIL_ADDRESS, EMAIL_APP_PASSWORD)
+        server.send_message(msg)
+
+    return msg["Message-ID"]
+
+
 def send_reply(
     to_address: str,
     subject: str,
