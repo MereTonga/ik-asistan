@@ -47,3 +47,19 @@ def search_relevant_chunks(company_id: str, query_text: str, db: Session, includ
             "is_confident": similarity >= RAG_CONFIDENCE_THRESHOLD,
         })
     return matches
+
+
+def search_relevant_chunks_multi(company_id: str, queries: list[str], db: Session, include_internal: bool = True) -> list[dict]:
+    """Birden çok sorguyla arar, sonuçları chunk bazında birleştirir (aynı chunk için en yüksek benzerlik)
+    ve en iyi RAG_TOP_K parçayı döner. Takip sorularında ("peki ya cuma günleri?") tek başına zayıf
+    eşleşen güncel soru, önceki soruyla birleştirilmiş ikinci bir sorguyla desteklenir."""
+    best: dict[str, dict] = {}
+    for query in queries:
+        if not (query or "").strip():
+            continue
+        for match in search_relevant_chunks(company_id, query, db, include_internal=include_internal):
+            current = best.get(match["chunk_id"])
+            if current is None or match["similarity"] > current["similarity"]:
+                best[match["chunk_id"]] = match
+    merged = sorted(best.values(), key=lambda m: m["similarity"], reverse=True)
+    return merged[:RAG_TOP_K]

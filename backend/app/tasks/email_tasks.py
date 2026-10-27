@@ -90,6 +90,31 @@ def _notify_hr_if_configured(company, email_data: dict, rag_result: dict) -> Non
         logger.error(f"İK bildirimi gönderilemedi ({address}): {e}", exc_info=True)
 
 
+def load_thread_history(db, thread_id) -> list[dict]:
+    """Thread'in son THREAD_MEMORY_MESSAGES mesajını LLM'e verilecek konuşma turları olarak döner
+    (kronolojik sıra, her mesaj THREAD_MEMORY_MAX_CHARS ile kısaltılır). 0 ise boş liste."""
+    limit = settings.THREAD_MEMORY_MESSAGES
+    if limit <= 0:
+        return []
+    max_chars = max(settings.THREAD_MEMORY_MAX_CHARS, 50)
+    recent = (
+        db.query(Message)
+        .filter(Message.thread_id == thread_id)
+        .order_by(Message.created_at.desc())
+        .limit(limit)
+        .all()
+    )
+    history = []
+    for message in reversed(recent):
+        body = (message.body or "").strip()
+        if not body:
+            continue
+        if len(body) > max_chars:
+            body = body[:max_chars].rstrip() + "…"
+        history.append({"role": "user" if message.sender_type == "employee" else "assistant", "content": body})
+    return history
+
+
 def _discard_incoming_stamp(db, incoming_id, thread_id, thread_was_new) -> None:
     """Cevap üretilemedi/gönderilemedi: idempotency damgasını (gelen mesaj kaydını) geri al ki
     bir sonraki poll aynı maili yeniden denesin. Yeni açılmış boş thread de silinir."""
@@ -142,6 +167,9 @@ def process_single_email(
     if is_new and not is_internal:
         thread.is_external = True
 
+    # Konuşma hafızası: gelen mesaj eklenmeden ÖNCE okunur ki yalnızca önceki turlar gelsin
+    history = [] if is_new else load_thread_history(db, thread.id)
+
     incoming_message = Message(
         thread_id=thread.id,
         message_id_header=email_data["message_id"],
@@ -158,6 +186,7 @@ def process_single_email(
             "company_id": str(company.id),
             "question": email_data["body"],
             "include_internal": bool(is_internal),
+            "history": history,
             "retrieved_chunks": [],
             "has_confident_match": False,
             "answer": "",

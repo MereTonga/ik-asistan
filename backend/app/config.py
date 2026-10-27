@@ -54,6 +54,8 @@ class Settings(BaseSettings):
     EMAIL_MAX_REPLIES_PER_SENDER_PER_HOUR: int = 5  # aynı gönderene saatte en fazla bu kadar cevap (döngü/istismar koruması)
     EMAIL_SKIP_MEMORY_DAYS: int = 30  # atlanan maillerin (bilinmeyen domain, oto-yanıt) Redis'te hatırlanma süresi
     THREAD_MATCH_WINDOW_DAYS: int = 30  # aynı gönderen + aynı konu kaç gün içinde eski thread'e bağlanır
+    THREAD_MEMORY_MESSAGES: int = 4  # takip sorularında LLM'e verilen önceki mesaj sayısı (0 = konuşma hafızası kapalı)
+    THREAD_MEMORY_MAX_CHARS: int = 500  # her önceki mesajın en fazla kaç karakteri verilir (num_ctx bütçesi için)
     THREAD_RESOLVE_AFTER_DAYS: int = 14  # bu kadar gün hareketsiz kalan 'open' thread'ler 'resolved' olur
     THREAD_RETENTION_DAYS: int = 0  # KVKK saklama süresi: son mesajı bu kadar günden eski thread'ler mesajlarıyla silinir; 0 = kapalı
 

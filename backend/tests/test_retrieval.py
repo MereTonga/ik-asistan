@@ -113,3 +113,34 @@ def test_external_scope_sees_only_public_documents(mock_get_embedding, db_sessio
 
     assert set(internal_scope) == {"ŞİRKET İÇİ MAAŞ POLİTİKASI", "HERKESE AÇIK BAŞVURU SÜRECİ"}
     assert external_scope == ["HERKESE AÇIK BAŞVURU SÜRECİ"]
+
+
+# --- Faz 19.1: çok sorgulu arama ---------------------------------------------------
+
+@patch("app.rag.retrieval.search_relevant_chunks")
+def test_multi_query_search_merges_by_best_similarity_and_caps_top_k(mock_search, monkeypatch):
+    import app.rag.retrieval as retrieval_module
+    from app.rag.retrieval import search_relevant_chunks_multi
+
+    monkeypatch.setattr(retrieval_module, "RAG_TOP_K", 3)
+
+    def fake_search(company_id, query, db, include_internal=True):
+        if query == "güncel":
+            return [
+                {"chunk_id": "a", "chunk_text": "A", "similarity": 0.40, "is_confident": False},
+                {"chunk_id": "b", "chunk_text": "B", "similarity": 0.35, "is_confident": False},
+            ]
+        return [
+            {"chunk_id": "a", "chunk_text": "A", "similarity": 0.70, "is_confident": True},
+            {"chunk_id": "c", "chunk_text": "C", "similarity": 0.60, "is_confident": True},
+            {"chunk_id": "d", "chunk_text": "D", "similarity": 0.50, "is_confident": False},
+        ]
+
+    mock_search.side_effect = fake_search
+
+    merged = search_relevant_chunks_multi("cid", ["güncel", "önceki + güncel", "  "], db=None, include_internal=False)
+
+    assert [m["chunk_id"] for m in merged] == ["a", "c", "d"]   # en iyi 3, benzerliğe göre
+    assert merged[0]["similarity"] == 0.70 and merged[0]["is_confident"] is True  # 'a' için en yüksek skor kazandı
+    assert mock_search.call_count == 2  # boş sorgu çağrılmadı
+    assert all(call.kwargs["include_internal"] is False for call in mock_search.call_args_list)

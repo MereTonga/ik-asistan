@@ -519,3 +519,57 @@ def test_check_new_emails_task_routes_unknown_sender_to_default_company(mock_bui
     assert not fake_redis.exists(tasks_module._skip_key("<d1@x>"))  # atlanmadı
     db_session.expire_all()
     assert db_session.query(EmailThread).filter(EmailThread.root_message_id_header == "<d1@x>").one().is_external is True
+
+
+# --- Faz 19.1: konuşma hafızası -------------------------------------------------
+
+def test_load_thread_history_returns_recent_turns_in_order_and_truncated(db_session, test_company, monkeypatch):
+    import app.tasks.email_tasks as tasks_module
+    from app.models import EmailThread, Message
+    from datetime import datetime, timedelta, timezone
+
+    monkeypatch.setattr(tasks_module.settings, "THREAD_MEMORY_MESSAGES", 3)
+    monkeypatch.setattr(tasks_module.settings, "THREAD_MEMORY_MAX_CHARS", 60)
+
+    thread = EmailThread(company_id=test_company.id, subject="s", employee_email="c@testcompany.com", status="open")
+    db_session.add(thread)
+    db_session.flush()
+    base = datetime.now(timezone.utc) - timedelta(minutes=10)
+    bodies = [("employee", "ilk soru"), ("ai_system", "ilk cevap"), ("employee", "ikinci soru"), ("ai_system", "x" * 200)]
+    for i, (sender_type, body) in enumerate(bodies):
+        db_session.add(Message(thread_id=thread.id, message_id_header=f"<h{i}@x>", sender_type=sender_type, body=body, created_at=base + timedelta(minutes=i)))
+    db_session.flush()
+
+    history = tasks_module.load_thread_history(db_session, thread.id)
+
+    assert [h["role"] for h in history] == ["assistant", "user", "assistant"]  # en eski ('ilk soru') düştü, kronolojik
+    assert history[1]["content"] == "ikinci soru"
+    assert history[2]["content"].endswith("…") and len(history[2]["content"]) == 61
+
+    monkeypatch.setattr(tasks_module.settings, "THREAD_MEMORY_MESSAGES", 0)
+    assert tasks_module.load_thread_history(db_session, thread.id) == []
+
+
+@patch("app.tasks.email_tasks.send_reply")
+@patch("app.tasks.email_tasks.build_rag_graph")
+def test_follow_up_mail_gets_history_but_first_mail_does_not(mock_build_graph, mock_send_reply, db_session, test_company):
+    from app.tasks.email_tasks import process_single_email
+
+    seen_states = []
+
+    class Graph:
+        def invoke(self, state):
+            seen_states.append(state)
+            return {**state, "answer": f"cevap {len(seen_states)}", "was_escalated": False}
+
+    mock_build_graph.return_value = Graph()
+    mock_send_reply.side_effect = _unique_ids()
+
+    process_single_email(_mail(message_id="<f1@x>", subject="Uzaktan çalışma", body="Haftada kaç gün ofis?"), db_session)
+    process_single_email(_mail(message_id="<f2@x>", subject="Re: Uzaktan çalışma", body="Peki ya cuma günleri?"), db_session)
+
+    assert seen_states[0]["history"] == []
+    assert seen_states[1]["history"] == [
+        {"role": "user", "content": "Haftada kaç gün ofis?"},
+        {"role": "assistant", "content": "cevap 1"},
+    ]
