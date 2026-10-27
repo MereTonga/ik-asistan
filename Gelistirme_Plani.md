@@ -100,6 +100,7 @@ bash stop_dev.sh          # aktif görev kontrolü + durdur + doğrula
 | 9 | Multi-Tenant Sıkılaştırma | ⚠️ Kısmi kapsamla sonlandırıldı (ikinci şirket + izolasyon testleri yapıldı; RLS bilinçli olarak ertelendi) |
 | — | `requirements.txt` + CI/CD (GitHub Actions) | ✅ Tamamlandı (ilk denemede başarılı) |
 | 10 | Docker (uygulamanın kendisini container'lama) | ✅ Tamamlandı |
+| 11 | Denetim sonrası Paket 0: gizlilik ve güvenlik hızlı düzeltmeleri | ✅ Tamamlandı (26-27 Ekim 2026) |
 | — | Genel değerlendirme + README + dokümantasyon kapanışı | ✅ Tamamlandı — **proje kapatıldı** |
 
 ---
@@ -370,6 +371,26 @@ search → (eşik üstü mü?) → generate_answer → groundedness_check → (d
 
 ---
 
+## FAZ 11 — Denetim Sonrası Paket 0 (Gizlilik ve Güvenlik Hızlı Düzeltmeleri)
+
+**Motivasyon:** Ekim 2026'da proje baştan sona okunup çok mercekli bir denetimden geçirildi (143 ham → 54 tekil bulgu; tam liste ve açık kararlar `Denetim_Raporu.md`). Bulgular paketlere bölündü; Paket 0, geliştirme makinesinde bile hemen kapatılması gereken, davranışı değiştirmeyen küçük düzeltmelerdir.
+
+**Yapılanlar:**
+- **11.1** — `backend/.coverage` (pytest-cov'un ikili çıktısı) git'ten çıkarıldı; `.gitignore`'a coverage/pytest önbelleği eklendi; backend ve frontend için `.dockerignore` yazıldı (uploads/, tests/, scripts/, önbellekler imaja girmiyor).
+- **11.2** — Test paneli simülasyonu artık hiçbir koşulda gerçek e-posta gönderemez: `process_single_email(..., send_email=False)` parametresi eklendi, `/test/simulate` bunu daima `False` geçer; gerçek IMAP akışı değişmedi. İki test eklendi (`tests/test_email_tasks.py`).
+- **11.3** — `docker-compose.yml`: tüm host port yayınları `127.0.0.1` önekine çekildi (Docker Desktop/WSL2'de daha önce yerel ağa açıktı); Redis `--requirepass` ile parola istiyor; Postgres ve Redis parolaları compose içine gömülü olmaktan çıkarılıp `.env`'deki `POSTGRES_PASSWORD` / `REDIS_PASSWORD` ile `${...}` üzerinden okunuyor. `.env`'deki `REDIS_URL` parolayı içerecek şekilde güncellendi.
+- **11.4** — README (`.env` örneği, ağ notu, test paneli notu) ve bu plan güncellendi.
+
+**Dikkat edilen nokta:** Postgres parolasının **değeri** bilinçli olarak değiştirilmedi. `POSTGRES_PASSWORD` yalnızca volume ilk oluşturulurken uygulanır; mevcut `pgdata` eski parolayı taşıdığı için değer değişseydi tüm bağlantılar kopardı. Parola döndürmek isteyen `ALTER USER` çalıştırmalı ya da `down -v` ile sıfırdan kurmalı (README'de belgelendi).
+
+**Doğrulama:** `docker compose config` ile interpolasyon kontrol edildi; Postgres ve Redis yeni ayarla yeniden oluşturuldu, portlar `127.0.0.1:5432` / `127.0.0.1:6379` olarak bağlandı; parolasız Redis bağlantısı `AuthenticationError` ile reddedildi, parolalı bağlantı başarılı; 36 test geçti.
+
+**Kapsam dışı (sonraki paketler, `Denetim_Raporu.md`):** Honcho/betik temizliği, Docker modunda api–worker ortak volume, e-posta hattı dayanıklılığı, kimlik doğrulama, chunk'lama, dokümanların kodla hizalanması.
+
+**Faz 11 tamamlandı.**
+
+---
+
 ## Bilinen Sınırlamalar (Genel Özet)
 
 Proje boyunca bulunan, bilinçli olarak MVP kapsamı dışında bırakılan noktaların toplu listesi (detaylar ilgili faz bölümlerinde):
@@ -446,7 +467,7 @@ Bu projede bilinçli olarak kapsam dışı bırakılan, ayrı/daha sade projeler
 
 ## Şu Anki Durum / Devam Noktası
 
-**Tamamlanan:** Faz 0-10'un tamamı + Groundedness Check + CI. Proje **kapatıldı**.
+**Tamamlanan:** Faz 0-10'un tamamı + Groundedness Check + CI; Ekim 2026'da denetim ve Faz 11 (Paket 0). Sonraki paketler için karar listesi `Denetim_Raporu.md` içinde.
 **Kapsam dışı bırakılan (bilinçli karar):** Kimlik doğrulama, gerçek sunucuya deploy, PostgreSQL RLS, global exception handler — hepsi "Bilinen Sınırlamalar" listesinde gerekçeleriyle kayıtlı.
 
 **Projeye yeni bakan biri için giriş noktası:** `README.md` (kurulum + kullanım), ardından `Proje_Dokumantasyonu.md` (mimari gerekçeler), ardından bu dosya (uygulama geçmişi ve alınan kararlar).

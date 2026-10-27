@@ -180,7 +180,13 @@ DATABASE_URL=postgresql://ik_asistan:dev_password_degistir@localhost:5432/ik_asi
 TEST_DATABASE_URL=postgresql://ik_asistan:dev_password_degistir@localhost:5432/ik_asistan_test_db
 
 # --- Redis ---
-REDIS_URL=redis://localhost:6379/0
+REDIS_URL=redis://:redis-parolasi-buraya@localhost:6379/0
+
+# --- Compose parolaları (docker-compose.yml bunları ${...} ile okur) ---
+# POSTGRES_PASSWORD, DATABASE_URL/TEST_DATABASE_URL içindeki parolayla aynı olmalı.
+# REDIS_PASSWORD, REDIS_URL içindeki parolayla aynı olmalı.
+POSTGRES_PASSWORD=dev_password_degistir
+REDIS_PASSWORD=redis-parolasi-buraya
 
 # --- Ollama ---
 OLLAMA_BASE_URL=http://host.docker.internal:11434
@@ -208,6 +214,8 @@ EMAIL_POLL_INTERVAL_SECONDS=300
 # --- Loglama ---
 LOG_LEVEL=INFO
 ```
+
+> **Ağ notu:** Compose, tüm portları (`5432`, `6379`, `8000`, `3000`) yalnızca `127.0.0.1`'e bağlar; servisler aynı makineden `localhost` ile erişilir, yerel ağdaki diğer cihazlara açılmaz. Redis parola ister, Postgres parolası ve Redis parolası `.env`'den gelir. **Mevcut bir `pgdata` volume'unda `POSTGRES_PASSWORD` değerini değiştirmek parolayı değiştirmez** (parola ilk kurulumda belirlenir); değiştirmek için `ALTER USER ik_asistan PASSWORD '...'` çalıştırın ya da `docker compose down -v` ile sıfırdan kurun.
 
 > **`EMAIL_DRY_RUN=true` ile başlayın.** Bu modda sistem gelen kutusunu okur, cevap üretir, ama **gerçek mail göndermez** — sadece konsola yazdırır. Her şeyin doğru çalıştığından emin olduktan sonra `false` yapın.
 
@@ -284,7 +292,7 @@ Dönen UUID'yi not edin — frontend'de `company_id` olarak kullanılıyor (şu 
 
 ### Test Paneli (Gerçek Mail Göndermeden Deneme)
 
-`http://localhost:3000/test` — hazır senaryolarla sistemi test edebilirsiniz. Her senaryo, gerçek bir e-posta gelmiş gibi işlenir (IMAP adımı atlanır), sonucu anında görürsünüz. Senaryolar `backend/app/email_service/test_data/test_emails.json` dosyasında — istediğiniz gibi düzenleyebilirsiniz.
+`http://localhost:3000/test` — hazır senaryolarla sistemi test edebilirsiniz. Her senaryo, gerçek bir e-posta gelmiş gibi işlenir (IMAP adımı atlanır), sonucu anında görürsünüz. Simülasyon, `EMAIL_DRY_RUN` ayarından bağımsız olarak **hiçbir zaman gerçek e-posta göndermez**; yalnızca cevabı üretir ve kaydeder. Senaryolar `backend/app/email_service/test_data/test_emails.json` dosyasında — istediğiniz gibi düzenleyebilirsiniz.
 
 ### Analitik
 
@@ -375,6 +383,7 @@ Bu proje bilinçli olarak sınırlı bir kapsamda tutulmuştur. En önemlileri:
 - KVKK / veri saklama-silme politikası uygulanmadı.
 - Test verisi (şirketler, belgeler) elle oluşturuluyor — tekrarlanabilir bir seed betiği yok.
 - `run_dev.sh` / `stop_dev.sh` (Honcho + tmux geliştirme ortamı) artık Docker Compose ile çakışıyor; proje Docker moduna geçtiği için güncellenmedi.
+- Ekim 2026'da yapılan kapsamlı denetimin tam bulgu listesi ve açık kararlar `Denetim_Raporu.md` dosyasındadır (Faz 11 bu listenin ilk paketidir).
 
 ---
 
