@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 from app.config import UPLOAD_DIR, settings
 from app.db.session import get_db
 from app.models import Company, Document, DocumentChunk
-from app.models.document import DocumentStatus
+from app.models.document import DocumentStatus, DocumentVisibility
 from app.tasks.document_tasks import (
     approve_document_task,
     process_uploaded_document_task,
@@ -34,6 +34,10 @@ class DocumentTextUpdate(BaseModel):
     raw_extracted_text: str
 
 
+class DocumentVisibilityUpdate(BaseModel):
+    visibility: Literal["internal", "public"]
+
+
 def _serialize(document: Document, detail: bool = False) -> dict:
     data = {
         "id": str(document.id),
@@ -41,6 +45,7 @@ def _serialize(document: Document, detail: bool = False) -> dict:
         "original_filename": document.original_filename,
         "source_type": document.source_type,
         "status": document.status,
+        "visibility": document.visibility,
         "error_message": document.error_message,
         "created_at": document.created_at.isoformat() if document.created_at else None,  # timestamptz → '+00:00' ile
     }
@@ -97,6 +102,7 @@ def upload_document(
     file: UploadFile = File(...),
     company_id: uuid.UUID = Form(...),
     document_quality: Literal["clean", "complex"] | None = Form(None),
+    visibility: Literal["internal", "public"] = Form(DocumentVisibility.INTERNAL),
     db: Session = Depends(get_db),
 ):
     company = db.query(Company).filter(Company.id == company_id).first()
@@ -120,6 +126,7 @@ def upload_document(
         stored_filename=saved_filename,
         source_type="pending",
         document_quality=None if extension == ".pdf" else document_quality,
+        visibility=visibility,
         status=DocumentStatus.PROCESSING,
         raw_extracted_text=None,
     )
@@ -228,10 +235,21 @@ def delete_document(document_id: str, db: Session = Depends(get_db)):
     return {"id": document_id, "message": "Belge, parçaları ve dosyası kalıcı olarak silindi."}
 
 
+@router.patch("/{document_id}/visibility")
+def update_document_visibility(document_id: str, payload: DocumentVisibilityUpdate, db: Session = Depends(get_db)):
+    """Belgenin kapsamını değiştirir: 'internal' yalnızca çalışanlara, 'public' herkese cevap kaynağı olur.
+    Yeniden indeksleme gerekmez; arama anında belge üzerinden filtrelenir."""
+    document = _get_document_or_404(document_id, db)
+    document.visibility = payload.visibility
+    db.commit()
+    return {"id": str(document.id), "visibility": document.visibility, "message": "Görünürlük güncellendi"}
+
+
 @router.get("")
 def list_documents(
     status: Optional[str] = None,
     company_id: Optional[uuid.UUID] = None,
+    visibility: Optional[Literal["internal", "public"]] = None,
     db: Session = Depends(get_db),
 ):
     query = db.query(Document)
@@ -239,6 +257,8 @@ def list_documents(
         query = query.filter(Document.status == status)
     if company_id:
         query = query.filter(Document.company_id == company_id)
+    if visibility:
+        query = query.filter(Document.visibility == visibility)
     documents = query.order_by(Document.created_at.desc()).all()
     return [_serialize(d) for d in documents]
 

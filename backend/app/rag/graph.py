@@ -60,6 +60,7 @@ def _escape_tags(text: str) -> str:
 class RAGState(TypedDict, total=False):
     company_id: str
     question: str
+    include_internal: bool       # False: dış gönderen, yalnızca herkese açık belgeler (varsayılan True)
     retrieved_chunks: list       # arama sonucu bulunanlar
     has_confident_match: bool    # eşik üstünde en az bir chunk var mı
     max_similarity: float        # en iyi chunk'ın benzerliği (analitik / eşik kalibrasyonu için kaydedilir)
@@ -87,7 +88,10 @@ def search_node(state: RAGState) -> RAGState:
     from app.db.session import SessionLocal
     db = SessionLocal()
     try:
-        chunks = search_relevant_chunks(state["company_id"], state["question"], db)
+        chunks = search_relevant_chunks(
+            state["company_id"], state["question"], db,
+            include_internal=state.get("include_internal", True),
+        )
     finally:
         db.close()
     has_confident = any(c["is_confident"] for c in chunks)

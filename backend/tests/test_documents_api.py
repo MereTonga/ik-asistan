@@ -405,3 +405,47 @@ def test_delete_rejects_busy_document(client, db_session, test_company, upload_d
 
     assert client.delete(f"/documents/{processing.id}").status_code == 409
     assert client.delete(f"/documents/{indexing.id}").status_code == 409
+
+
+# --- Faz 18.1: görünürlük ------------------------------------------------------
+
+@patch("app.api.documents.process_uploaded_document_task")
+def test_upload_defaults_to_internal_and_accepts_public(mock_task, client, db_session, test_company, upload_dir):
+    from app.models import Document
+
+    default = client.post(
+        "/documents/upload",
+        data={"company_id": str(test_company.id)},
+        files={"file": ("a.pdf", io.BytesIO(PDF_HEADER), "application/pdf")},
+    )
+    public = client.post(
+        "/documents/upload",
+        data={"company_id": str(test_company.id), "visibility": "public"},
+        files={"file": ("b.pdf", io.BytesIO(PDF_HEADER), "application/pdf")},
+    )
+    bad = client.post(
+        "/documents/upload",
+        data={"company_id": str(test_company.id), "visibility": "secret"},
+        files={"file": ("c.pdf", io.BytesIO(PDF_HEADER), "application/pdf")},
+    )
+
+    assert default.status_code == 200 and public.status_code == 200
+    assert bad.status_code == 422
+    assert db_session.query(Document).filter(Document.id == default.json()["id"]).one().visibility == "internal"
+    assert db_session.query(Document).filter(Document.id == public.json()["id"]).one().visibility == "public"
+
+
+def test_visibility_can_be_changed_and_filtered(client, db_session, test_company):
+    doc = _make_document(db_session, test_company, status=DocumentStatus.APPROVED)
+    assert client.get(f"/documents/{doc.id}").json()["visibility"] == "internal"
+
+    changed = client.patch(f"/documents/{doc.id}/visibility", json={"visibility": "public"})
+    assert changed.status_code == 200
+    db_session.refresh(doc)
+    assert doc.visibility == "public"
+
+    assert client.patch(f"/documents/{doc.id}/visibility", json={"visibility": "gizli"}).status_code == 422
+
+    listed = client.get(f"/documents?company_id={test_company.id}&visibility=public").json()
+    assert [d["id"] for d in listed] == [str(doc.id)]
+    assert client.get(f"/documents?company_id={test_company.id}&visibility=internal").json() == []

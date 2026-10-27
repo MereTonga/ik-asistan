@@ -17,17 +17,31 @@ from app.config import BACKEND_DIR
 from app.db.session import SessionLocal
 from app.logging_config import get_logger
 from app.models import Company, Document
-from app.models.document import DocumentStatus
+from app.models.document import DocumentStatus, DocumentVisibility
 from app.tasks.document_tasks import approve_document_task
 
 logger = get_logger(__name__)
 
 SEED_DIR = os.path.join(BACKEND_DIR, "seed")
 
+# documents: (dosya adı, görünürlük). 'public' belgeler dışarıdan yazanlara da cevap kaynağı olur (Faz 18).
 SEED_COMPANIES = [
-    {"name": "Örnek A Şirketi", "email_domain": "ornek-a.com", "documents": ["ornek_a_politikalar.md"]},
-    {"name": "Örnek B Şirketi", "email_domain": "ornek-b.com", "documents": ["ornek_b_politikalar.md"]},
+    {
+        "name": "Örnek A Şirketi",
+        "email_domain": "ornek-a.com",
+        "documents": [
+            ("ornek_a_politikalar.md", DocumentVisibility.INTERNAL),
+            ("ornek_a_genel_bilgiler.md", DocumentVisibility.PUBLIC),
+        ],
+    },
+    {
+        "name": "Örnek B Şirketi",
+        "email_domain": "ornek-b.com",
+        "documents": [("ornek_b_politikalar.md", DocumentVisibility.INTERNAL)],
+    },
 ]
+
+SEED_DOCUMENT_COUNT = sum(len(c["documents"]) for c in SEED_COMPANIES)
 
 
 def seed_demo(db) -> dict:
@@ -44,7 +58,7 @@ def seed_demo(db) -> dict:
             result["companies_created"] += 1
             logger.info(f"seed: şirket oluşturuldu -> {company.name} ({company.email_domain})")
 
-        for filename in spec["documents"]:
+        for filename, visibility in spec["documents"]:
             exists = (
                 db.query(Document)
                 .filter(Document.company_id == company.id, Document.original_filename == filename)
@@ -62,6 +76,7 @@ def seed_demo(db) -> dict:
                 original_filename=filename,
                 stored_filename=None,  # diskte dosya yok, metin doğrudan Markdown
                 source_type="seed_markdown",
+                visibility=visibility,
                 status=DocumentStatus.INDEXING,
                 raw_extracted_text=text,
             )

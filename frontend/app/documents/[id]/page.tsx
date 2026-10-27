@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { API_BASE, apiFetch, errorMessage } from "@/lib/api";
-import { BUSY_STATUSES, sourceLabel, statusBadgeVariant, statusLabel } from "@/lib/status";
+import { BUSY_STATUSES, sourceLabel, statusBadgeVariant, statusLabel, visibilityLabel } from "@/lib/status";
 
 type DocumentDetail = {
   id: string;
@@ -15,6 +15,7 @@ type DocumentDetail = {
   source_type: string;
   document_quality: string | null;
   status: string;
+  visibility: string;
   raw_extracted_text: string | null;
   error_message: string | null;
   created_at: string;
@@ -121,6 +122,20 @@ export default function DocumentDetailPage() {
   const handleRetire = () =>
     runAction("retire", () => apiFetch(`/documents/${id}/retire`, { method: "POST" }), "Belge aramadan çıkarıldı; 'Yeniden etkinleştir' ile geri alınabilir.");
 
+  const handleVisibility = (visibility: "internal" | "public") =>
+    runAction(
+      "visibility",
+      () =>
+        apiFetch(`/documents/${id}/visibility`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ visibility }),
+        }),
+      visibility === "public"
+        ? "Belge herkese açık yapıldı: dışarıdan yazanlara da cevap kaynağı olur."
+        : "Belge şirket içine alındı: yalnızca çalışanlara cevap kaynağı olur."
+    );
+
   const handleDelete = async () => {
     setBusyAction("delete");
     setActionError(null);
@@ -160,6 +175,7 @@ export default function DocumentDetailPage() {
       <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
         <h1 className="text-2xl font-bold">{doc.original_filename}</h1>
         <div className="flex gap-2">
+          <Badge variant={doc.visibility === "public" ? "secondary" : "outline"}>{visibilityLabel(doc.visibility)}</Badge>
           <Badge variant="outline">{sourceLabel(doc.source_type)}</Badge>
           <Badge variant={statusBadgeVariant(doc.status)}>{statusLabel(doc.status)}</Badge>
         </div>
@@ -254,6 +270,19 @@ export default function DocumentDetailPage() {
             {busyAction === "rechunk" ? "Kuyruğa alınıyor..." : "Yeniden etkinleştir"}
           </Button>
         )}
+        {!isBusy && (
+          <Button
+            variant="outline"
+            onClick={() => handleVisibility(doc.visibility === "public" ? "internal" : "public")}
+            disabled={busyAction !== null}
+          >
+            {busyAction === "visibility"
+              ? "Güncelleniyor..."
+              : doc.visibility === "public"
+                ? "Şirket içine al"
+                : "Herkese açık yap"}
+          </Button>
+        )}
         {!isBusy && !confirmDelete && (
           <Button variant="destructive" onClick={() => setConfirmDelete(true)} disabled={busyAction !== null}>
             Sil
@@ -274,6 +303,10 @@ export default function DocumentDetailPage() {
       {doc.status === "retired" && (
         <p className="mt-2 text-sm text-slate-500">Emekli belge aramada kullanılmaz; metni saklanır.</p>
       )}
+      <p className="mt-2 text-xs text-slate-500">
+        Görünürlük: <strong>Şirket içi</strong> belgeler yalnızca şirket çalışanlarının sorularına kaynak olur;
+        <strong> Herkese açık</strong> belgeler dışarıdan yazanlara da (örneğin adaylara) cevap kaynağı olur.
+      </p>
       {canEdit && textIsEmpty && (
         <p className="mt-2 text-sm text-amber-700">Metin boşken onaylanamaz; metni düzenleyin ya da belgeyi yeniden işleyin.</p>
       )}

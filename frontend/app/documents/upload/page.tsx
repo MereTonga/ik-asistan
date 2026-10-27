@@ -12,6 +12,7 @@ export default function UploadPage() {
   const { selected, loading: companyLoading } = useCompany();
   const [file, setFile] = useState<File | null>(null);
   const [quality, setQuality] = useState<string>("clean");
+  const [visibility, setVisibility] = useState<"internal" | "public">("internal");
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -26,6 +27,7 @@ export default function UploadPage() {
     const formData = new FormData();
     formData.append("file", file);
     formData.append("company_id", selected.id);
+    formData.append("visibility", visibility);
     if (!isPdf) {
       formData.append("document_quality", quality);
     }
@@ -81,6 +83,36 @@ export default function UploadPage() {
               PDF dosyaları otomatik olarak metin katmanından işlenir, kalite seçimi gerekmez.
             </p>
           )}
+
+          <fieldset className="flex flex-col gap-2">
+            <legend className="text-sm font-medium">Görünürlük</legend>
+            <label className="flex items-start gap-2 text-sm">
+              <input
+                type="radio"
+                name="visibility"
+                value="internal"
+                checked={visibility === "internal"}
+                onChange={() => setVisibility("internal")}
+                className="mt-1"
+              />
+              <span>
+                <strong>Şirket içi</strong> — yalnızca şirket çalışanlarının sorularına kaynak olur (varsayılan)
+              </span>
+            </label>
+            <label className="flex items-start gap-2 text-sm">
+              <input
+                type="radio"
+                name="visibility"
+                value="public"
+                checked={visibility === "public"}
+                onChange={() => setVisibility("public")}
+                className="mt-1"
+              />
+              <span>
+                <strong>Herkese açık</strong> — dışarıdan yazanlara da (adaylar vb.) cevap kaynağı olur
+              </span>
+            </label>
+          </fieldset>
 
           {error && <p className="text-sm text-red-600">{error}</p>}
 

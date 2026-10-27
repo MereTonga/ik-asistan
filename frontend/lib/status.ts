@@ -16,6 +16,15 @@ export const SOURCE_LABELS: Record<string, string> = {
   seed_markdown: "Örnek veri",
 };
 
+export const VISIBILITY_LABELS: Record<string, string> = {
+  internal: "Şirket içi",
+  public: "Herkese açık",
+};
+
+export function visibilityLabel(visibility: string): string {
+  return VISIBILITY_LABELS[visibility] ?? visibility;
+}
+
 // Bu durumlarda worker çalışıyordur; sayfa kendini periyodik olarak yeniler.
 export const BUSY_STATUSES = ["processing", "indexing"];
 

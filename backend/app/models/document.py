@@ -31,6 +31,19 @@ class DocumentStatus:
     BUSY = (PROCESSING, INDEXING)        # worker üzerinde çalışıyor; silinemez
 
 
+class DocumentVisibility:
+    """Belgenin kimlere cevap kaynağı olabileceği.
+
+    INTERNAL: yalnızca şirket çalışanlarına (domain ya da yetkili gönderen eşleşmesi) cevap verirken kullanılır.
+    PUBLIC: herkese, dışarıdan yazanlara da (Faz 18.3: varsayılan şirket) cevap verirken kullanılır.
+    Varsayılan INTERNAL: İK bilerek açık yapmadıkça hiçbir belge dışarıya cevap kaynağı olmaz.
+    """
+    INTERNAL = "internal"
+    PUBLIC = "public"
+
+    ALL = (INTERNAL, PUBLIC)
+
+
 class Document(Base):
     __tablename__ = "documents"
     __table_args__ = (Index("ix_documents_company_id", "company_id"),)
@@ -43,6 +56,7 @@ class Document(Base):
     source_type = Column(String, nullable=False)  # 'pending' | 'pdf_text' | 'ocr_clean' | 'ocr_complex'
     document_quality = Column(String, nullable=True)  # görseller için 'clean' | 'complex' (yeniden işlemede gerekir)
     status = Column(String, nullable=False, default=DocumentStatus.PENDING_APPROVAL)  # bkz. DocumentStatus
+    visibility = Column(String, nullable=False, default=DocumentVisibility.INTERNAL, server_default=DocumentVisibility.INTERNAL)  # bkz. DocumentVisibility
 
     raw_extracted_text = Column(Text, nullable=True)  # onay ekranında gösterilecek ham çıktı
     error_message = Column(Text, nullable=True)  # son işleme/indeksleme hatası (varsa)

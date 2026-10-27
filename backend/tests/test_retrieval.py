@@ -86,3 +86,30 @@ def test_search_relevant_chunks_ignores_unapproved_documents_across_companies(
     texts = [r["chunk_text"] for r in results]
 
     assert "ONAYLANMAMIŞ İÇERİK" not in texts
+
+
+# --- Faz 18.1: görünürlük ------------------------------------------------------
+
+@patch("app.rag.retrieval.get_embedding")
+def test_external_scope_sees_only_public_documents(mock_get_embedding, db_session, test_company):
+    from app.models import Document, DocumentChunk
+    from app.models.document import DocumentVisibility
+    from app.rag.retrieval import search_relevant_chunks
+
+    mock_get_embedding.return_value = [0.1] * 1024
+
+    _create_approved_chunk(db_session, test_company, "ic_politika.md", "ŞİRKET İÇİ MAAŞ POLİTİKASI")
+    public_doc = Document(
+        company_id=test_company.id, original_filename="genel.md", source_type="manual_test",
+        status="approved", visibility=DocumentVisibility.PUBLIC, raw_extracted_text="HERKESE AÇIK BAŞVURU SÜRECİ",
+    )
+    db_session.add(public_doc)
+    db_session.flush()
+    db_session.add(DocumentChunk(document_id=public_doc.id, company_id=test_company.id, chunk_text="HERKESE AÇIK BAŞVURU SÜRECİ", embedding=[0.1] * 1024))
+    db_session.flush()
+
+    internal_scope = [r["chunk_text"] for r in search_relevant_chunks(str(test_company.id), "soru", db_session)]
+    external_scope = [r["chunk_text"] for r in search_relevant_chunks(str(test_company.id), "soru", db_session, include_internal=False)]
+
+    assert set(internal_scope) == {"ŞİRKET İÇİ MAAŞ POLİTİKASI", "HERKESE AÇIK BAŞVURU SÜRECİ"}
+    assert external_scope == ["HERKESE AÇIK BAŞVURU SÜRECİ"]

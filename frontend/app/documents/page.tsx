@@ -7,13 +7,14 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { apiFetch, errorMessage } from "@/lib/api";
 import { useCompany } from "@/lib/company-context";
-import { sourceLabel, statusBadgeVariant, statusLabel } from "@/lib/status";
+import { sourceLabel, statusBadgeVariant, statusLabel, visibilityLabel } from "@/lib/status";
 
 type DocumentSummary = {
   id: string;
   original_filename: string;
   source_type: string;
   status: string;
+  visibility: string;
   error_message: string | null;
   created_at: string;
 };
@@ -110,6 +111,9 @@ export default function DocumentsPage() {
                 <CardTitle className="flex flex-wrap items-center justify-between gap-2 text-base">
                   {doc.original_filename}
                   <div className="flex gap-2">
+                    {doc.visibility === "public" && (
+                      <Badge variant="secondary">{visibilityLabel(doc.visibility)}</Badge>
+                    )}
                     <Badge variant="outline">{sourceLabel(doc.source_type)}</Badge>
                     <Badge variant={statusBadgeVariant(doc.status)}>{statusLabel(doc.status)}</Badge>
                   </div>

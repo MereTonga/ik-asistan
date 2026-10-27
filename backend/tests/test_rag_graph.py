@@ -220,3 +220,16 @@ def test_groundedness_prompt_wraps_source_and_answer(mock_client, monkeypatch):
     assert "<kaynak>\n" in prompt and "\n</kaynak>" in prompt
     assert "<cevap>\ncevap metni\n</cevap>" in prompt
     assert prompt.count("</kaynak>") == 1
+
+
+# --- Faz 18.1: arama kapsamı ---------------------------------------------------
+
+@patch("app.rag.graph.search_relevant_chunks", return_value=[])
+def test_search_node_passes_scope_to_retrieval(mock_search):
+    from app.rag.graph import search_node
+
+    search_node({"company_id": "x", "question": "soru", "include_internal": False})
+    assert mock_search.call_args.kwargs["include_internal"] is False
+
+    search_node({"company_id": "x", "question": "soru"})
+    assert mock_search.call_args.kwargs["include_internal"] is True
