@@ -108,7 +108,7 @@ bash stop_dev.sh          # aktif görev kontrolü + durdur + doğrula
 | 16 | Paket 3/A: prompt sertleştirme, indeksler, seed, veri saklama | ✅ Tamamlandı (27 Ekim 2026) |
 | 17 | Paket 3/B: OCR sağlık kontrolü, belge emekliye ayırma/silme, İK bildirimi | ✅ Tamamlandı (27 Ekim 2026) |
 | 18 | Paket 3/C: "kime ne cevap" modeli (belge görünürlüğü, yetkili gönderenler, varsayılan şirket, şirket silme) | ✅ Tamamlandı (27 Ekim 2026) |
-| 19 | Paket 3/D: thread memory | ⏳ Sırada |
+| 19 | Paket 3/D: thread memory (konuşma hafızası) + test panelinde takip sorusu | ✅ Tamamlandı (27 Ekim 2026) |
 | 20 | Paket 3/E: bağımlılıklar, imajlar, CI | ⏳ Sırada |
 | 21 | Paket 4: dokümantasyon | ⏳ Sırada |
 | — | Genel değerlendirme + README + dokümantasyon kapanışı | ✅ Tamamlandı — **proje kapatıldı** |
@@ -525,6 +525,20 @@ search → (eşik üstü mü?) → generate_answer → groundedness_check → (d
 
 ---
 
+## FAZ 19 — Paket 3/D (Thread Memory)
+
+**Motivasyon:** Tasarım dokümanı en başından beri "konuşma hafızası" vaat ediyordu ("Peki ya cuma günleri?" takip sorusunun bir önceki konuya göre anlaşılması) ama kodda thread'ler yalnızca kayıtların yerini belirliyor, LLM'e yalnızca güncel mail gidiyordu (denetim bulgusu F023).
+
+**Yapılanlar:**
+- **19.1 — Çekirdek.** Mail var olan bir thread'e bağlandığında `load_thread_history` son `THREAD_MEMORY_MESSAGES` (4) mesajı kronolojik sırayla, her biri `THREAD_MEMORY_MAX_CHARS` (500) ile kısaltılmış olarak RAG state'e `history` diye koyar (gelen mesaj eklenmeden önce okunur). `generate_answer_node` bunları gerçek sohbet turları (user/assistant) olarak sistem prompt'u ile güncel soru arasına yerleştirir; çalışan turları yine `<soru>` ayracıyla ve etiket taklidi etkisizleştirilerek verilir; sistem prompt'una "önceki yazışma yalnızca bağlam, cevap yine dokümana dayanır" notu eklenir. Arama: `search_relevant_chunks_multi` güncel soru ve "önceki çalışan sorusu + güncel soru" sorgularını çalıştırıp chunk bazında en yüksek benzerlikle birleştirir, en iyi `RAG_TOP_K` parçayı döner; takip sorusu tek başına zayıf eşleşse de doğru parçalar gelir. Groundedness kontrolü değişmedi. Bütçe: en kötü durumda ~2.500 token, `num_ctx` 4.096 içinde.
+- **19.2 — Test panelinde takip sorusu.** `POST /test/simulate/{i}` JSON `{"question": ...}` alıyor: gönderen ve konu aynı kaldığı için aynı thread'e bağlanır (`Re:` öneki), hafıza devreye girer; panelde senaryo altında sonuç zinciri ve takip kutusu. `test_emails.json`'a iki aday senaryosu eklendi (kullanıcı onayıyla): "Staj Başvurusu", "Çalışma Belgesi Talebi" — "dışarıdan gelen gibi" kutusuyla birlikte dış gönderenin olumlu cevap aldığı durum da denenebiliyor.
+
+**Test:** 168 test (Faz 18 sonunda 160).
+
+**Faz 19 tamamlandı.**
+
+---
+
 ## Bilinen Sınırlamalar (Genel Özet)
 
 Proje boyunca bulunan, bilinçli olarak MVP kapsamı dışında bırakılan noktaların toplu listesi (detaylar ilgili faz bölümlerinde):
@@ -601,7 +615,7 @@ Bu projede bilinçli olarak kapsam dışı bırakılan, ayrı/daha sade projeler
 
 ## Şu Anki Durum / Devam Noktası
 
-**Tamamlanan:** Faz 0-10'un tamamı + Groundedness Check + CI; Ekim 2026'da denetim, Faz 11 (Paket 0), Faz 12 (Paket 1), Faz 13-15 (Paket 2), Faz 16-18 (Paket 3/A-C). Sıradaki: Faz 19 (thread memory), Faz 20 (bağımlılıklar, imajlar, CI), Faz 21 (Paket 4 dokümantasyon). Kimlik doğrulama bilinçli olarak kapsam dışı bırakıldı.
+**Tamamlanan:** Faz 0-10'un tamamı + Groundedness Check + CI; Ekim 2026'da denetim, Faz 11 (Paket 0), Faz 12 (Paket 1), Faz 13-15 (Paket 2), Faz 16-19 (Paket 3/A-D). Sıradaki: Faz 20 (bağımlılıklar, imajlar, CI), Faz 21 (Paket 4 dokümantasyon). Kimlik doğrulama bilinçli olarak kapsam dışı bırakıldı.
 **Kapsam dışı bırakılan (bilinçli karar):** Kimlik doğrulama, gerçek sunucuya deploy, PostgreSQL RLS, global exception handler — hepsi "Bilinen Sınırlamalar" listesinde gerekçeleriyle kayıtlı.
 
 **Projeye yeni bakan biri için giriş noktası:** `README.md` (kurulum + kullanım), ardından `Proje_Dokumantasyonu.md` (mimari gerekçeler), ardından bu dosya (uygulama geçmişi ve alınan kararlar).
