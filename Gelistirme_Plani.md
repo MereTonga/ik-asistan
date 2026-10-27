@@ -107,7 +107,7 @@ bash stop_dev.sh          # aktif görev kontrolü + durdur + doğrula
 | 15 | Denetim sonrası Paket 2/C: şema (timestamptz, isimli kısıtlar, skor alanları), Celery ayarları, verdict parse | ✅ Tamamlandı (27 Ekim 2026) |
 | 16 | Paket 3/A: prompt sertleştirme, indeksler, seed, veri saklama | ✅ Tamamlandı (27 Ekim 2026) |
 | 17 | Paket 3/B: OCR sağlık kontrolü, belge emekliye ayırma/silme, İK bildirimi | ✅ Tamamlandı (27 Ekim 2026) |
-| 18 | Paket 3/C: "kime ne cevap" modeli (belge görünürlüğü, yetkili gönderenler, varsayılan şirket) | ⏳ Sırada |
+| 18 | Paket 3/C: "kime ne cevap" modeli (belge görünürlüğü, yetkili gönderenler, varsayılan şirket, şirket silme) | ✅ Tamamlandı (27 Ekim 2026) |
 | 19 | Paket 3/D: thread memory | ⏳ Sırada |
 | 20 | Paket 3/E: bağımlılıklar, imajlar, CI | ⏳ Sırada |
 | 21 | Paket 4: dokümantasyon | ⏳ Sırada |
@@ -508,14 +508,31 @@ search → (eşik üstü mü?) → generate_answer → groundedness_check → (d
 
 ---
 
+## FAZ 18 — Paket 3/C ("Kime Ne Cevap" Modeli)
+
+**Motivasyon (kullanıcının tasarımı):** İK adresine yalnızca çalışanlar yazmaz. Eski kural "gönderen domain'i bir şirkete eşleşmiyorsa sessizce atla" idi; bu hem kişisel adres kullanan çalışanları dışarıda bırakıyor hem de adaylar gibi dışarıdan yazanlara hiç cevap vermiyordu. Yeni model: belgeler **şirket içi** ya da **herkese açık**; çalışanlar ikisini, dışarıdan yazanlar yalnızca açık olanları görür.
+
+**Yapılanlar:**
+- **18.1 — Belge görünürlüğü.** `documents.visibility` (`internal` varsayılan, `public`), yükleme ekranında seçim, detayda değiştirme, listede rozet ve filtre, `PATCH /documents/{id}/visibility`. `search_relevant_chunks(include_internal=False)` yalnızca açık belgeleri arar; RAG state'e `include_internal` eklendi. Seed'e A şirketi için herkese açık "genel bilgiler" belgesi (başvuru süreci, staj, çalışma belgesi) eklendi.
+- **18.2 — Yetkili gönderenler ve şirket yönetimi.** `authorized_senders` tablosu (adres benzersiz, küçük harf); `GET/POST/DELETE /companies/{id}/senders`. `resolve_sender` eşleştirme sırası: yetkili adres → domain → `DEFAULT_COMPANY_DOMAIN` (dış gönderen) → atla. `DELETE /companies/{id}`: belgesi/yazışması varsa `force=true` ister, varsa chunk'lar, dosyalar, mesajlar ve yetkili gönderenlerle birlikte siler. Şirket ya da gönderen eklendiğinde atlama belleği temizlenir (Faz 14'ün 30 günlük "bilinmeyen domain" hafızası artık yeni kayıtları engellemez). `email_threads.is_external` kolonu.
+- **18.3 — Dış gönderen akışı.** Eşleşmeyen gönderen, `DEFAULT_COMPANY_DOMAIN` ayarlıysa o şirkete `include_internal=False` ile bağlanır; thread `is_external`; LLM sistem prompt'una "soran kişi şirket çalışanı değil, yalnızca açık bilgiyi paylaş, çalışanmış gibi hitap etme" notu; analitikte `external_questions`; test panelinde "Dışarıdan gelen gibi çalıştır" kutusu (`?external=true`).
+
+**Tasarım notları:** Ayar boşsa eski davranış korunur (dışarıdan gelenler atlanır). Dış gönderen işareti thread açılırken konur; aynı gönderen aynı konuyla devam ederse thread'in işareti korunur. Kimlik doğrulama hâlâ yok: `From` sahteciliği yetkili gönderen taklidine izin verir (cevap sahte adrese gider).
+
+**Test:** 160 test (Faz 17 sonunda 141).
+
+**Faz 18 tamamlandı.**
+
+---
+
 ## Bilinen Sınırlamalar (Genel Özet)
 
 Proje boyunca bulunan, bilinçli olarak MVP kapsamı dışında bırakılan noktaların toplu listesi (detaylar ilgili faz bölümlerinde):
 
 1. Kimlik doğrulama (authentication) hiç yok — paneldeki şirket seçici (Faz 13) yalnızca görünüm filtresi.
-2. Domain eşleştirmesi "1 domain = 1 şirket" varsayımına dayanıyor; kişisel mail kullanan çalışanlar/stajyerler sistemle iletişim kuramıyor.
-3. Paylaşılan/genel domain (`gmail.com` vb.) bir şirketin domain'i olarak kaydedilirse veri sızıntısı riski oluşur.
-4. "Her gelen mail bir İK sorusudur" varsayımı — niyet sınıflandırması yok.
+2. Çalışan tanıma domain + yetkili gönderen listesine dayanıyor (Faz 18); kişisel adres kullanan çalışanlar listeye eklenerek içeri alınır, eklenmeyenler `DEFAULT_COMPANY_DOMAIN` ayarlıysa yalnızca herkese açık belgelerle cevap alır. `From` doğrulanmadığı için sahte `From` ile çalışan taklidi mümkün (cevap sahte adrese gider).
+3. Paylaşılan/genel domain (`gmail.com` vb.) bir şirketin domain'i olarak kaydedilirse veri sızıntısı riski oluşur; kişisel adresler için yetkili gönderen listesi kullanılmalı.
+4. "Her gelen mail bir İK sorusudur" varsayımı — niyet sınıflandırması yok (yalnızca oto-yanıt/bounce/liste/sistem adresi eleniyor).
 5. Alıntı temizleme (%100 kapsayıcı değil). (`References` artık birikimli — Faz 14.)
 6. Sadece Gmail/App Password test edildi; OAuth2, Outlook/Exchange kurumsal IMAP denenmedi.
 7. Gerçek bir reranker modeli yok — sadece groundedness check (aynı LLM ile ikinci doğrulama) eklendi; cross-encoder tabanlı ayrı bir reranker, ek VRAM maliyeti nedeniyle bilinçli olarak eklenmedi.
@@ -584,7 +601,7 @@ Bu projede bilinçli olarak kapsam dışı bırakılan, ayrı/daha sade projeler
 
 ## Şu Anki Durum / Devam Noktası
 
-**Tamamlanan:** Faz 0-10'un tamamı + Groundedness Check + CI; Ekim 2026'da denetim, Faz 11 (Paket 0), Faz 12 (Paket 1), Faz 13-15 (Paket 2), Faz 16-17 (Paket 3/A-B). Sıradaki: Faz 18 ("kime ne cevap" modeli: belge görünürlüğü internal/public, yetkili gönderen listesi, `DEFAULT_COMPANY_DOMAIN`, dış gönderen işareti), Faz 19 (thread memory), Faz 20 (bağımlılıklar, imajlar, CI), Faz 21 (Paket 4 dokümantasyon). Kimlik doğrulama bilinçli olarak kapsam dışı bırakıldı.
+**Tamamlanan:** Faz 0-10'un tamamı + Groundedness Check + CI; Ekim 2026'da denetim, Faz 11 (Paket 0), Faz 12 (Paket 1), Faz 13-15 (Paket 2), Faz 16-18 (Paket 3/A-C). Sıradaki: Faz 19 (thread memory), Faz 20 (bağımlılıklar, imajlar, CI), Faz 21 (Paket 4 dokümantasyon). Kimlik doğrulama bilinçli olarak kapsam dışı bırakıldı.
 **Kapsam dışı bırakılan (bilinçli karar):** Kimlik doğrulama, gerçek sunucuya deploy, PostgreSQL RLS, global exception handler — hepsi "Bilinen Sınırlamalar" listesinde gerekçeleriyle kayıtlı.
 
 **Projeye yeni bakan biri için giriş noktası:** `README.md` (kurulum + kullanım), ardından `Proje_Dokumantasyonu.md` (mimari gerekçeler), ardından bu dosya (uygulama geçmişi ve alınan kararlar).

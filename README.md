@@ -221,7 +221,7 @@ EMAIL_POLL_INTERVAL_SECONDS=300
 LOG_LEVEL=INFO
 ```
 
-İsteğe bağlı ayarlar (varsayılanları `backend/app/config.py` içinde): `HR_NOTIFY_EMAIL` (boş), `MAX_UPLOAD_MB` (20), `EMAIL_MAX_REPLIES_PER_SENDER_PER_HOUR` (5), `EMAIL_SKIP_MEMORY_DAYS` (30), `THREAD_MATCH_WINDOW_DAYS` (30), `THREAD_RESOLVE_AFTER_DAYS` (14), `THREAD_RETENTION_DAYS` (0 = kapalı; >0 ise bu kadar günden eski yazışmalar her gece silinir), `TASK_SOFT_TIME_LIMIT_SECONDS` (1800), `NEXT_PUBLIC_API_URL` (frontend build-arg, `http://localhost:8000`), `TZ` (container'ların log/zamanlama saat dilimi, `Europe/Istanbul`; veritabanı her zaman UTC saklar, panel tarayıcının saat dilimini gösterir).
+İsteğe bağlı ayarlar (varsayılanları `backend/app/config.py` içinde): `HR_NOTIFY_EMAIL` (boş), `DEFAULT_COMPANY_DOMAIN` (boş; dışarıdan gelen mailleri karşılayan şirket), `MAX_UPLOAD_MB` (20), `EMAIL_MAX_REPLIES_PER_SENDER_PER_HOUR` (5), `EMAIL_SKIP_MEMORY_DAYS` (30), `THREAD_MATCH_WINDOW_DAYS` (30), `THREAD_RESOLVE_AFTER_DAYS` (14), `THREAD_RETENTION_DAYS` (0 = kapalı; >0 ise bu kadar günden eski yazışmalar her gece silinir), `TASK_SOFT_TIME_LIMIT_SECONDS` (1800), `NEXT_PUBLIC_API_URL` (frontend build-arg, `http://localhost:8000`), `TZ` (container'ların log/zamanlama saat dilimi, `Europe/Istanbul`; veritabanı her zaman UTC saklar, panel tarayıcının saat dilimini gösterir).
 
 > **Ağ notu:** Compose, tüm portları (`5432`, `6379`, `8000`, `3000`) yalnızca `127.0.0.1`'e bağlar; servisler aynı makineden `localhost` ile erişilir, yerel ağdaki diğer cihazlara açılmaz. Redis parola ister, Postgres parolası ve Redis parolası `.env`'den gelir. **Mevcut bir `pgdata` volume'unda `POSTGRES_PASSWORD` değerini değiştirmek parolayı değiştirmez** (parola ilk kurulumda belirlenir); değiştirmek için `ALTER USER ik_asistan PASSWORD '...'` çalıştırın ya da `docker compose down -v` ile sıfırdan kurun.
 
@@ -288,6 +288,30 @@ Aynı işi API ile de yapabilirsiniz: `POST /companies/add` (form alanları `nam
 curl -X PATCH http://localhost:8000/companies/<id> -H 'Content-Type: application/json' -d '{"hr_notify_email": "ik.muduru@sirket.com"}'
 ```
 
+### Kime Ne Cevap Verilir?
+
+Belgelerin iki görünürlüğü vardır: **Şirket içi** (varsayılan) ve **Herkese açık**. Gönderen adresine göre kapsam belirlenir:
+
+| Gönderen | Nasıl tanınır | Kullanılan belgeler |
+|---|---|---|
+| Şirket çalışanı | Adresin domain'i şirketin `email_domain`'i | Şirket içi + herkese açık |
+| Kişisel adres kullanan çalışan/stajyer | Şirketin **yetkili gönderen** listesinde | Şirket içi + herkese açık |
+| Dışarıdan biri (aday, eski çalışan...) | Hiçbiri; `.env`'de `DEFAULT_COMPANY_DOMAIN` ayarlıysa o şirkete yönlenir | Yalnızca herkese açık |
+
+`DEFAULT_COMPANY_DOMAIN` boşsa dışarıdan gelen mailler atlanır ve okunmamış kalır (eski davranış). Dışarıdan gelenlere LLM "soran kişi çalışan değil" notuyla cevap üretir; bu yazışmalar analitikte ayrı sayılır.
+
+```bash
+# Kişisel adres kullanan bir çalışanı şirkete bağla / listele / sil
+curl -X POST http://localhost:8000/companies/<id>/senders -H 'Content-Type: application/json' -d '{"email": "ali@gmail.com", "note": "stajyer"}'
+curl http://localhost:8000/companies/<id>/senders
+curl -X DELETE http://localhost:8000/companies/<id>/senders/<sender_id>
+
+# Şirketi sil (belgesi/yazışması varsa force gerekir; hepsi birlikte silinir)
+curl -X DELETE "http://localhost:8000/companies/<id>?force=true"
+```
+
+Şirket ya da yetkili gönderen eklendiğinde, daha önce "bilinmeyen domain" diye atlanan mailler bir sonraki turda yeniden değerlendirilir. Test panelindeki **"Dışarıdan gelen gibi çalıştır"** kutusu, gerçek mail atmadan dış gönderen davranışını dener.
+
 > `email_domain`, gelen e-postanın hangi şirkete ait olduğunu belirler. Örneğin `ahmet@ornek-sirket.com` adresinden gelen bir mail, bu şirkete eşleşir.
 
 ### Örnek Veri (Seed)
@@ -304,7 +328,8 @@ Komut `backend/seed/*.md` dosyalarını belge olarak yükler, chunk'lar ve embed
 
 1. `http://localhost:3000/documents` → **"+ Yeni Belge Yükle"**
 2. Dosyayı seçin (`.jpg`, `.png`, `.pdf`)
-3. Görsel yüklüyorsanız kaliteyi seçin:
+3. Görünürlüğü seçin: **Şirket içi** (yalnızca çalışanlara kaynak) ya da **Herkese açık** (dışarıdan yazanlara da). Sonradan belge detayından değiştirilebilir.
+4. Görsel yüklüyorsanız kaliteyi seçin:
    - **Temiz** — düz taranmış, iyi ışıklı belge (hızlı OCR)
    - **Karmaşık** — telefonla çekilmiş, eğik/gölgeli fotoğraf (güçlü ama yavaş OCR)
 4. Yükleme arka planda işlenir (karmaşık fotoğraflarda birkaç dakika sürebilir). Belge bu sırada **İşleniyor** durumundadır; detay sayfası kendini birkaç saniyede bir yeniler.
@@ -395,8 +420,9 @@ Bu proje bilinçli olarak sınırlı bir kapsamda tutulmuştur. En önemlileri:
 - Yüklenen dosyalar `/uploads` altında herkese açık servis ediliyor (yetkilendirme yok).
 
 **E-posta**
-- Domain eşleştirmesi **"bir domain = bir şirket"** varsayımına dayanıyor. Kişisel mail adresi kullanan çalışanlar/stajyerler sistemle iletişim kuramaz.
-- Paylaşılan domain (`gmail.com` gibi) bir şirkete atanırsa, o domain'deki herkes o şirketin çalışanı sayılır — **veri sızıntısı riski.**
+- Çalışan tanıma domain ve yetkili gönderen listesine dayanır; `From` başlığı doğrulanmadığı için sahte `From` ile çalışan gibi görünmek mümkündür (cevap sahte adrese gider).
+- Paylaşılan domain (`gmail.com` gibi) bir şirkete atanırsa, o domain'deki herkes o şirketin çalışanı sayılır — **veri sızıntısı riski.** Kişisel adresler için şirket domain'i yerine yetkili gönderen listesini kullanın.
+- `DEFAULT_COMPANY_DOMAIN` ayarlıysa İK adresine yazan herkes "herkese açık" belgelerden cevap alır; açık belgeleri seçmek İK'nın sorumluluğudur.
 - Sistem, gelen mailin **niyetini** sınıflandırmaz — her maili bir İK sorusu varsayar (iş başvurusu, spam vb. ayırt edilmez). Yalnızca oto-yanıt, teslim raporu, liste ve sistem adresi mailleri başlıklarından tanınıp elenir.
 - Alıntı temizleme (yanıtlardaki eski mail bloklarını ayıklama) regex tabanlı, %100 kapsayıcı değil.
 - Gönderenin `From` başlığı doğrulanmaz (SPF/DKIM sonuçları okunmaz); sahte `From` ile bot tetiklenebilir, cevap sahte adrese gider.
