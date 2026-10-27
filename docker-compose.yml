@@ -1,3 +1,12 @@
+# Backend servislerinin (migrate/api/worker/beat) ortak tanimi: ayni image, ayni .env, ayni baglanti adresleri.
+x-backend: &backend
+  build: ./backend
+  env_file: .env
+  environment:
+    DATABASE_URL: postgresql://ik_asistan:${POSTGRES_PASSWORD}@postgres:5432/ik_asistan_db
+    REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379/0
+    OLLAMA_BASE_URL: http://host.docker.internal:11434
+
 services:
   postgres:
     image: pgvector/pgvector:pg16
@@ -31,50 +40,30 @@ services:
       retries: 10
 
   migrate:
-    build: ./backend
+    <<: *backend
     command: alembic upgrade head
-    env_file: .env
-    environment:
-      DATABASE_URL: postgresql://ik_asistan:${POSTGRES_PASSWORD}@postgres:5432/ik_asistan_db
-      OLLAMA_BASE_URL: http://host.docker.internal:11434
-      REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379/0
     depends_on:
       postgres:
         condition: service_healthy
 
   api:
-    build: ./backend
+    <<: *backend
     ports:
       - "127.0.0.1:8000:8000"
-    env_file: .env
-    environment:
-      DATABASE_URL: postgresql://ik_asistan:${POSTGRES_PASSWORD}@postgres:5432/ik_asistan_db
-      REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379/0
-      OLLAMA_BASE_URL: http://host.docker.internal:11434
     depends_on:
       migrate:
         condition: service_completed_successfully
 
   worker:
-    build: ./backend
+    <<: *backend
     command: celery -A app.celery_app worker --loglevel=info
-    env_file: .env
-    environment:
-      DATABASE_URL: postgresql://ik_asistan:${POSTGRES_PASSWORD}@postgres:5432/ik_asistan_db
-      REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379/0
-      OLLAMA_BASE_URL: http://host.docker.internal:11434
     depends_on:
       migrate:
         condition: service_completed_successfully
 
   beat:
-    build: ./backend
+    <<: *backend
     command: celery -A app.celery_app beat --loglevel=info
-    env_file: .env
-    environment:
-      DATABASE_URL: postgresql://ik_asistan:${POSTGRES_PASSWORD}@postgres:5432/ik_asistan_db
-      REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379/0
-      OLLAMA_BASE_URL: http://host.docker.internal:11434
     depends_on:
       migrate:
         condition: service_completed_successfully
