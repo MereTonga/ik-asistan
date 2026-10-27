@@ -21,7 +21,16 @@
 | Honcho paketi (`run_dev.sh`, `stop_dev.sh`, `Procfile.dev`, `check_*.py`, honcho) | **Kalıyor** (kullanıcı kararı): container öncesi dönemde terminal kolaylığı sağlıyordu. Yalnızca `run_dev.sh`'nin compose ile port çakışması giderildi (Faz 12.2). |
 | Paket 1 | **Uygulandı (27 Ekim, Faz 12.1–12.8):** betikler + `test_files/` silindi, `smoke_imap.py`, `pytest.ini`; `pymupdf`/`numpy`/`httpx` çıkarıldı (**düzeltme:** `httpx2` gerekli, TestClient onu istiyor); `rag_tasks.py` ve kullanılmayan import'lar; tüm config `settings` üzerinden, tek `get_db`, tek `UPLOAD_DIR`; frontend kalıntıları; compose anchor. Model alanları Paket 2'ye ertelendi. |
 | Paket 2 | **Onaylandı (27 Ekim), tüm öneriler kabul edildi:** 1a bind mount, 2a şirket seçici + api.ts, 3a okundu + yönlendirilenler yıldızlı, 4a 30 gün, 5a saatte 5 cevap/gönderen, 6a reprocess, 7 20 MB, 8a rechunk, 9a alanları doldur + 14 günde resolved. **Uygulandı:** Faz 13 (Docker + belge hattı), Faz 14 (e-posta hattı), Faz 15 (şema ve küçükler) — 27 Ekim, 114 test. Ayrıntı: `Gelistirme_Plani.md` Faz 13-15. |
-| Paket 3–4 | **Bekliyor**, Paket 2 bitince ayrıntılı konuşulacak. |
+| Paket 3 | **Uygulandı (27 Ekim, Faz 16-20):** prompt sertleştirme, HNSW, seed, saklama görevi; OCR sağlık kontrolü, emekliye ayırma/silme, `hr_notify_email`; belge görünürlüğü + yetkili gönderenler + `DEFAULT_COMPANY_DOMAIN` + şirket silme; thread memory + test paneli takip sorusu; bağımlılıklar, root'suz imajlar, CI. Kimlik doğrulama kullanıcı kararıyla kapsam dışı. |
+| Paket 4 | **Uygulandı (27 Ekim, Faz 21):** README, tasarım dokümanı delta tablosu, plan sınırlama listesi, bu kapanış tablosu. |
+
+### Kapanış: 54 bulgunun durumu
+
+| Durum | Sayı | Bulgular |
+|---|---|---|
+| ✅ Kapatıldı | 46 | F001-F003, F005-F015, F017-F025, F027-F035, F037-F041, F043, F045-F047, F049-F051, F053, F054 |
+| ◐ Kısmen | 3 | F026 (test boşlukları: çok sayıda test eklendi; gerçek IMAP bağlantısı ve frontend testleri yok), F048 (UX: önizleme linki ve yükleniyor durumu var, sayfalama yok), F052 (node 22, root'suz, HOSTNAME yapıldı; imaj dijestleri sabitlenmedi) |
+| ✋ Bilinçli açık | 5 | F004 ve F016 (kimlik doğrulama yok, CSRF yüzeyi onunla birlikte kalır), F036 (`From` doğrulanmıyor), F042 (`karmasik_foto.jpg` kalıyor), F044 (Honcho paketi kalıyor; port çakışması Faz 12.2'de giderildi) |
 
 ---
 

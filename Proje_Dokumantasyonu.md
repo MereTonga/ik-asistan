@@ -2,7 +2,23 @@
 
 ## Kapsamlı Sistem ve Karar Gerekçeleri Dokümanı
 
-> **Bu doküman nedir?** Bu proje henüz kurulum/kodlama aşamasına geçmemiş bir tasarım dokümanıdır. Amacı, projeyi hiç duymamış birinin bile ne yapıldığını, nasıl çalıştığını ve *neden* bu teknolojilerin seçildiğini anlayabilmesidir. Ayrıca bu proje, satılabilir bir ticari ürün değil; **portföy/CV amaçlı, gerçek bir production sisteminin tasarım disipliniyle geliştirilen bir gösterim (showcase) projesidir.** Bu ayrım, ilerleyen bölümlerde bazı kararların neden "ideal" değil "yeterince iyi ve gerçekçi" seçildiğini açıklar.
+> **Bu doküman nedir?** Projenin kodlamadan **önce** yazılmış tasarım dokümanıdır; mimari gerekçeleri ve "neden bu teknoloji" kararlarını anlatır. Aşağıdaki gövde **tarihsel kayıt** olarak olduğu gibi korunmuştur; uygulama sırasında değişen kararlar hemen altındaki "Uygulamada Değişenler" tablosunda özetlenir, güncel davranış için `README.md` ve faz faz geçmiş için `Gelistirme_Plani.md` esastır. Proje, satılabilir bir ticari ürün değil; **portföy/öğrenme amaçlı, gerçek bir production sisteminin tasarım disipliniyle geliştirilen bir gösterim (showcase) projesidir.**
+
+## Uygulamada Değişenler (Ekim 2026 itibarıyla)
+
+| Tasarımda | Uygulamada | Neden / Nerede |
+|---|---|---|
+| E-posta girişi Postmark/SendGrid inbound webhook (Bölüm 5.6, 7, 8) | **IMAP polling** (Celery Beat, Gmail App Password) + SMTP ile cevap | "Lokal AI, veri dışarı çıkmıyor" hikâyesiyle tutarlılık; Faz 6 |
+| "Auth & Tenant Guard" katmanı (Bölüm 4) | **Kimlik doğrulama yok**, bilinçli karar | Öğrenme projesi; her şirket kendi ağında çalıştırır. Paneldeki şirket seçici yalnızca görünüm filtresidir (Faz 13) |
+| Markdown/MDX editörü (Bölüm 4) | Düzenlenebilir `textarea` | Yeterli; Faz 7 |
+| Thread memory "tasarımın parçası" (Bölüm 5.5, 7) | Faz 19'a kadar yoktu; şimdi son 4 mesaj LLM'e bağlam olarak veriliyor, takip sorusu için iki sorgulu arama | Denetim bulgusu F023; Faz 19 |
+| Escalation'da "İK personeline bildirim düşer" (Bölüm 7) | Gelen kutusunda **yıldız** + isteğe bağlı `hr_notify_email` bildirimi | Bot ve İK çoğu zaman aynı kutuyu kullanır; Faz 14 ve 17 |
+| Başlık hiyerarşisine duyarlı chunk'lama, tablolar korunur (Bölüm 7) | Boş satır + Markdown başlığı bloklama, 1500 karakter pencere, 200 örtüşme, başlık ön eki | Faz 13; tablolar için özel işlem yok |
+| Reranker / groundedness "önerilir" (Bölüm 11) | Groundedness kontrolü aynı LLM ile uygulandı; ayrı reranker yok | VRAM maliyeti; Faz 9 sonrası |
+| Çok kiracılı SaaS: tek kurulum, çok şirket (Bölüm 9, 12) | Model korunuyor ama hedef kullanım **şirket başına yerel kurulum**; buna ek "kime ne cevap" modeli: belgeler şirket içi/herkese açık, yetkili gönderen listesi, `DEFAULT_COMPANY_DOMAIN` ile dışarıdan gelenlere yalnızca açık belgeler | Faz 18 |
+| RLS "önerilen ek katman" (Bölüm 9) | Uygulanmadı; izolasyon uygulama seviyesinde, testlerle doğrulanmış | Bilinçli erteleme (Faz 9) |
+| KVKK saklama politikası "kapsam dışı" (Bölüm 11) | `THREAD_RETENTION_DAYS` ile yazışma silme görevi (varsayılan kapalı), belge silme/emekliye ayırma | Faz 16-17 |
+| Modeller: qwen3-vl, qwen3.5, qwen3-embedding (Bölüm 6) | Aynı aile + temiz belgeler için `glm-ocr`; `think=False` ve `temperature` ayarları zorunlu | Faz 1 ve Groundedness bölümü |
 
 ---
 

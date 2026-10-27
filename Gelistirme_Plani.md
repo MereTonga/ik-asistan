@@ -110,7 +110,7 @@ bash stop_dev.sh          # aktif görev kontrolü + durdur + doğrula
 | 18 | Paket 3/C: "kime ne cevap" modeli (belge görünürlüğü, yetkili gönderenler, varsayılan şirket, şirket silme) | ✅ Tamamlandı (27 Ekim 2026) |
 | 19 | Paket 3/D: thread memory (konuşma hafızası) + test panelinde takip sorusu | ✅ Tamamlandı (27 Ekim 2026) |
 | 20 | Paket 3/E: bağımlılıklar, imajlar (root'suz, node 22), CI | ✅ Tamamlandı (27 Ekim 2026) |
-| 21 | Paket 4: dokümantasyon | ⏳ Sırada |
+| 21 | Markdown/metin yükleme + Paket 4: dokümantasyon ve kapanış | ✅ Tamamlandı (27 Ekim 2026) |
 | — | Genel değerlendirme + README + dokümantasyon kapanışı | ✅ Tamamlandı — **proje kapatıldı** |
 
 ---
@@ -554,6 +554,18 @@ search → (eşik üstü mü?) → generate_answer → groundedness_check → (d
 
 ---
 
+## FAZ 21 — Markdown Yükleme + Paket 4 (Dokümantasyon ve Kapanış)
+
+- **21.0 — Markdown ve düz metin yükleme.** Kullanıcı isteği: `.md` ve `.txt` dosyaları doğrudan okunur (AI/OCR yok), UTF-8 ve ikili içerik kontrolü, kalite seçimi yalnızca görsellerde; `source_type` `markdown_text` / `plain_text`. 171 test.
+- **21.1 — README.** Proje ağacı bugünkü depoya göre yeniden üretildi; belge türleri, bilinen sınırlamalar ve diğer dokümanlar tablosu güncellendi.
+- **21.2 — Tasarım dokümanı.** `Proje_Dokumantasyonu.md` tarihsel kayıt ilan edildi; başına "Uygulamada Değişenler" tablosu eklendi (webhook → IMAP, auth yok, MDX → textarea, thread memory, İK bildirimi, chunk'lama, reranker, kullanım modeli, RLS, KVKK, modeller).
+- **21.3 — Bu plan.** "Bilinen Sınırlamalar (Genel Özet)" bugünkü hale getirildi; kod asistanları için kurallar Docker modu, Settings, migration ve status sabitleri için güncellendi; kapanış değerlendirmesi yenilendi.
+- **21.4 — Denetim raporu.** 54 bulgunun kapanış tablosu: 46 kapatıldı, 3 kısmen, 5 bilinçli açık.
+
+**Faz 21 tamamlandı — denetim sonrası çalışma kapandı.**
+
+---
+
 ## Bilinen Sınırlamalar (Genel Özet)
 
 Proje boyunca bulunan, bilinçli olarak MVP kapsamı dışında bırakılan noktaların toplu listesi (detaylar ilgili faz bölümlerinde):
@@ -568,13 +580,17 @@ Proje boyunca bulunan, bilinçli olarak MVP kapsamı dışında bırakılan nokt
 8. KVKK/veri saklama-silme politikası: Faz 16'dan itibaren `THREAD_RETENTION_DAYS` ile yazışmalar için uygulanabilir (varsayılan kapalı); belgeler için silme Faz 17'de.
 9. RLS henüz yok (Faz 9'da bilinçli olarak ertelendi) — sadece uygulama seviyesi (`WHERE company_id=`) filtreleme, artık testlerle doğrulanmış durumda.
 10. OCR onay ekranında sadece metin düzenlenebiliyor, görsel değil.
-11. Uygulamanın kendisi container'landı (Faz 10) — ancak `run_dev.sh`/`stop_dev.sh` (Honcho+tmux geliştirme ortamı) artık compose ile **çakışıyor**, `profiles` çözümü uygulanmadı.
-12. `httpx2` gibi sonradan eklenen bağımlılıklar `requirements.txt`'te — `honcho`/`tmux` da orada, ancak `tmux` bir sistem paketi olarak README'de belirtilmeli.
+11. İki çalışma modu var: Docker Compose (varsayılan; `docker_panel.sh` ile log paneli) ve Honcho+tmux (`run_dev.sh` yalnızca Postgres/Redis'i Docker'da başlatır, uygulama host'ta `.venv` ile çalışır). İkisi aynı anda çalıştırılmamalı (aynı portlar).
+12. Bağımlılıklar Faz 20'de güncellendi; `sqlalchemy` 2.1, `imapclient` 4, `typescript` 7 ve `eslint` 10 major sürümleri bilinçli olarak alınmadı. İmaj dijestleri sabitlenmedi. `tmux` ve `honcho` yalnızca Honcho modunda gerekir.
 13. `GET /documents` için `company_id` filtresi isteğe bağlı (Faz 13); `GET /documents/{id}` ve işlem endpoint'leri şirket kontrolü yapmıyor — kimlik doğrulama olmadan anlamlı bir kontrol de mümkün değil. RLS uygulanmadığı için bu, veritabanı seviyesinde de kapatılmadı.
 14. Global bir exception handler / genel hata yönetimi gözden geçirmesi yapılmadı (Faz 9'un bir parçası olarak planlanmıştı, kapsam dışına alındı).
 15. Chunk'lama kural tabanlı (Faz 13: boş satır + Markdown başlığı, 1500 karakter pencere, 200 örtüşme, başlık ön eki) — embedding tabanlı anlamsal bölme yok.
 16. `RAG_CONFIDENCE_THRESHOLD` (0.55) hiç gerçek ölçekte kalibre edilmedi — Faz 1'deki üç örnek cümlelik ölçümden gelen bir başlangıç tahmini. (Faz 15'ten itibaren her cevapta en yüksek benzerlik kaydediliyor ve analitikte gösteriliyor; kalibrasyon için veri artık birikiyor.)
 17. Örnek veri için tekrarlanabilir seed betiği var (Faz 16, `python -m app.seed`); gerçek şirket ve belgeler yine elle oluşturulur ve `docker compose down -v` ile kaybolur (yedekleme stratejisi yok).
+18. Gerçek İK aynı kutudan çalışana cevap yazarsa bot bunu görmez ve çalışanın takip sorusunu yine kendisi cevaplamaya çalışır; `hr_staff` mesaj tipi hiç dolmuyor. Çözüm (Gönderilmiş klasörünü izlemek ya da İK'nın cevabını işaretlemesi) ileriye bırakıldı.
+19. Model sınırları: LLM bazen belgede açıkça yazmayan çıkarımlar yapıyor ("iki parçaya bölünebilir" → "tek seferde kullanılamaz"), takip sorularında bazen fazla temkinli davranıp belgede olan bilgiye "bilgi yok" diyebiliyor. Groundedness kontrolü uydurmayı yakalıyor, aşırı temkinliliği yakalamıyor.
+20. Frontend için otomatik test yok; CI yalnızca lint ve build çalıştırıyor. Backend tarafında gerçek IMAP bağlantısı test edilmiyor (sahte gelen kutusu ile görev akışı test ediliyor).
+21. Global exception handler hâlâ yok; FastAPI'nin varsayılan 500 davranışına güveniliyor.
 
 ---
 
@@ -588,7 +604,12 @@ Proje boyunca bulunan, bilinçli olarak MVP kapsamı dışında bırakılan nokt
 6. Yeni bir Celery task dosyası eklendiğinde `celery_app.py`'deki `include=[...]` listesine eklenmeli (aksi halde worker task'ı görmez — Faz 5'te yaşanan hata).
 7. Yeni kod yazıldığında, mümkünse aynı PR/adımda bir test de eklenmeli (Faz 8'den itibaren kurulu standart).
 8. `datetime.now(timezone.utc)` kullanılmalı, `datetime.utcnow()` değil (deprecated, Faz 8.3'te düzeltildi).
-9. **Celery worker, kod değişikliklerini otomatik yenilemez.** `uvicorn --reload` sadece FastAPI/web sürecini kapsar — `app/rag/`, `app/tasks/`, `app/email_service/` gibi worker tarafından kullanılan dosyalarda değişiklik yapıldığında, worker'ın belleğindeki eski kodu değil yeni kodu kullanması için sistem yeniden başlatılmalı (`stop_dev.sh` + `run_dev.sh`).
+9. **Celery worker, kod değişikliklerini otomatik yenilemez.** Docker modunda her kod değişikliğinden sonra `docker compose up -d --build` (dört backend servisi aynı imajı paylaşır, **hepsi birlikte** yeniden kurulmalı; yalnızca `api` kurulursa `migrate` eski imajda kalıp yeni migration'ı bulamaz). Honcho modunda `stop_dev.sh` + `run_dev.sh`.
+12. **Yapılandırma yalnızca `app.config.settings` üzerinden okunur** (Faz 12.5). Modüllerde `os.getenv`/`load_dotenv` kullanılmaz; yeni ayar `Settings`'e eklenir, varsayılanı verilir, README'deki isteğe bağlı ayarlar listesine yazılır.
+13. **Migration doğrulaması yalnızca test veritabanında yapılır:** `alembic -x sqlalchemy.url=$TEST_DATABASE_URL downgrade -1 && ... upgrade head`. Dev veritabanında asla `downgrade base` çalıştırılmaz (Faz 15'te veri kaybına yol açtı). Kısıt/indeks adları `naming_convention`'a uyar; `alembic revision --autogenerate` boş migration üretmeli.
+14. **Durum sabitleri:** belge durumu `DocumentStatus`, görünürlük `DocumentVisibility`, thread durumu `ThreadStatus` sınıflarındaki sabitlerle yazılır; serbest string kullanılmaz.
+15. **Frontend'de API çağrıları `lib/api.ts` (`apiFetch`) üzerinden yapılır;** adres kod içine yazılmaz. `useEffect` içinde doğrudan `setState` çağrılmaz (lint kuralı); `.then`/`.catch` içinde çağrılır.
+16. **`npm audit fix --omit=dev` dev bağımlılıklarını siler;** gerekirse `npm ci` ile geri kurulur, bayat `.next` önbelleği temizlenir.
 10. **Qwen3 ailesi modellerle (`qwen3.5:9b` dahil) yapılan her `client.chat(...)` çağrısında `think=False` açıkça belirtilmeli.** Varsayılan "thinking" modu, `num_ctx` bütçesinden pay alıyor — düşük `num_ctx` (bizde 4096) ile birleşince, özellikle art arda/zincirleme çağrılarda (örn. groundedness check) düşünme süreci tüm bütçeyi tüketip **boş cevaba** yol açabiliyor (Faz 1 ve Faz 6'daki açıklanamayan boş cevap/garip karakter olaylarının kök nedeni bu). `think=False`, hem bu riski ortadan kaldırıyor hem de yanıt süresini ciddi şekilde kısaltıyor (gözlemlenen: 30-95 saniyeden 4-6 saniyeye).
 11. **Güvenlik/karar kritikliği olan LLM çağrılarında (`groundedness_check_node` gibi) `temperature=0` kullanılmalı** — rastgelelik, aynı girdiye farklı kararlar (tutarsız EVET/HAYIR) verilmesine yol açabilir.
 
@@ -596,7 +617,7 @@ Proje boyunca bulunan, bilinçli olarak MVP kapsamı dışında bırakılan nokt
 
 Her **anlamlı bütünlük oluşturan alt adımda** commit atılır — her küçük dosya değişikliğinde değil.
 
-**Mesaj formatı:** `"Faz X.Y: [ne yapıldı, kısa]"` — örnek: `"Faz 8.6: Merkezi logging yapılandırması eklendi"`.
+**Mesaj formatı:** `"Faz X.Y: [ne yapıldı, kısa]"` — örnek: `"Faz 8.6: Merkezi logging yapılandırması eklendi"`. Faz dışı küçük düzeltmeler `Fix:`, dokümantasyon `Docs:`, geliştirme ortamı `Dev:` önekiyle. Mesajlar ASCII (Türkçe karakter kullanılmaz).
 
 ```bash
 git status              # .env, .venv/, node_modules/, logs/ görünmemeli
@@ -606,21 +627,22 @@ git commit -m "Faz X.Y: ..."
 
 ## Proje Kapanış Değerlendirmesi
 
-**Projenin niteliği:** Bitmiş bir **portföy/öğrenme projesi**. Eksiksiz bir ticari ürün değil — ve zaten öyle olması hedeflenmedi. Kapsam sınırları bilinçli çizildi ve her biri gerekçesiyle belgelendi.
+**Projenin niteliği:** Bitmiş bir **portföy/öğrenme projesi**. Eksiksiz bir ticari ürün değil — ve zaten öyle olması hedeflenmedi. Kapsam sınırları bilinçli çizildi ve her biri gerekçesiyle belgelendi. Ekim 2026'da proje baştan sona denetlenip (`Denetim_Raporu.md`) Faz 11-21 ile elden geçirildi.
 
 ### Güçlü Yanlar
 
 - **Gerçek koşullarda kanıtlanmış çekirdek işlevsellik** — sistem, gerçek Gmail/Outlook hesapları arasında, gerçek e-posta protokolüyle, çok sayıda senaryoyla test edildi. Faz 6'daki `\r\n`, charset, IMAP `PEEK` gibi bulgular yalnızca gerçek testlerde ortaya çıkabilecek türdendi.
-- **Bilinçli güvenlik tasarımı** — insan onayı (düzenlenebilir OCR çıktısıyla), halüsinasyona karşı iki katmanlı savunma (güven eşiği + groundedness check), şirket bazlı izolasyon (testlerle kanıtlanmış), idempotency, dağıtık kilit.
-- **Mühendislik disiplini katmanları** — 34 otomatik test (mock ile dış servislerden bağımsız), CI (GitHub Actions), yapılandırılmış loglama, fail-fast config doğrulama, tam container'ize sistem.
-- **Belgelenmiş hata/çözüm geçmişi** — `think=False` bulgusu (Faz 1'den beri gizli duran sorunun iki faz sonra doğru teşhisi), race condition'ın gerçek koşullarda ortaya çıkışı ve çözümü, `extra_hosts`'un fayda değil zarar verdiğinin keşfi. Bu geçmiş, projenin en öğretici kısmı.
+- **Bilinçli güvenlik tasarımı** — insan onayı (düzenlenebilir OCR çıktısıyla), halüsinasyona karşı üç katman (güven eşiği + groundedness check + prompt ayraçları), şirket bazlı izolasyon (testlerle kanıtlanmış), belge görünürlüğü (şirket içi / herkese açık), idempotency, token'lı dağıtık kilit, oto-yanıt döngüsü koruması, hız sınırı, root olmayan container'lar, loopback'e bağlı portlar.
+- **Dayanıklı işleme hatları** — belge yaşam döngüsü (işleniyor / onay bekliyor / hatalı / indeksleniyor / onaylı / emekli), OCR çıktı sağlık kontrolü, yeniden işleme/parçalama, e-posta tarafında işlenen maillerin işaretlenmesi, başlık-önce eleme, commit-önce-gönder, thread memory.
+- **Mühendislik disiplini katmanları** — 171 otomatik test (sahte Redis/IMAP ile dış servislerden bağımsız), dört işlik CI (test, lint/build, compose smoke, audit), yapılandırılmış loglama, tek kaynaklı config (`settings`), isimli kısıtlarla migration zinciri, tam container'ize sistem, seed betiği.
+- **Belgelenmiş hata/çözüm geçmişi** — `think=False` bulgusu, race condition'ın gerçek koşullarda ortaya çıkışı, `extra_hosts`'un zararı, Docker modunda belge yüklemenin hiç çalışmadığının (ortak volume yokluğu) denetimde bulunması, `downgrade base`'in dev veritabanında veri silmesi. Bu geçmiş, projenin en öğretici kısmı.
 
 ### Zayıf Yanlar / Eksikler
 
 Detaylı liste yukarıdaki "Bilinen Sınırlamalar" bölümünde. En kritik üçü:
-1. **Kimlik doğrulama yok** — sistemi gerçek bir çok-kullanıcılı ürün olmaktan alıkoyan en büyük eksik.
-2. **RLS yok** — izolasyon sadece uygulama katmanında (test edilmiş ve çalışıyor, ama ikinci savunma hattı yok).
-3. **RAG kalitesinde naif noktalar** — basit chunk'lama, kalibre edilmemiş eşik, gerçek reranker yokluğu.
+1. **Kimlik doğrulama yok** — bilinçli karar; şirket ağındaki herkes paneli kullanabilir. Gerçek kullanım için ilk eklenecek şey.
+2. **RLS yok ve `From` doğrulanmıyor** — izolasyon uygulama katmanında, gönderen kimliği mail başlığına güveniyor.
+3. **Model sınırları** — kalibre edilmemiş eşik (veri artık birikiyor), reranker yokluğu, takip sorularında aşırı temkinlilik, gerçek İK cevaplarının görülmemesi.
 
 ### Gelecekteki Projeler İçin Not Alınan Konular
 
@@ -630,7 +652,8 @@ Bu projede bilinçli olarak kapsam dışı bırakılan, ayrı/daha sade projeler
 
 ## Şu Anki Durum / Devam Noktası
 
-**Tamamlanan:** Faz 0-10'un tamamı + Groundedness Check + CI; Ekim 2026'da denetim, Faz 11 (Paket 0), Faz 12 (Paket 1), Faz 13-15 (Paket 2), Faz 16-20 (Paket 3). Sıradaki: Faz 21 (Paket 4 dokümantasyon: README ağacı, tasarım dokümanı için "orijinal tasarım / uygulamada değişenler" tablosu, sınırlama listesinin güncellenmesi). Kimlik doğrulama bilinçli olarak kapsam dışı bırakıldı.
-**Kapsam dışı bırakılan (bilinçli karar):** Kimlik doğrulama, gerçek sunucuya deploy, PostgreSQL RLS, global exception handler — hepsi "Bilinen Sınırlamalar" listesinde gerekçeleriyle kayıtlı.
+**Tamamlanan:** Faz 0-10 (ilk geliştirme, proje kapanışı) + Ekim 2026 denetimi ve Faz 11-21 (Paket 0-4). Denetim sonrası çalışma **kapandı**; 171 test, CI dört iş. Değişiklikler henüz GitHub'a push edilmedi (kullanıcı kararı).
+**Kapsam dışı bırakılan (bilinçli karar):** Kimlik doğrulama, gerçek sunucuya deploy, PostgreSQL RLS, `From` doğrulama, global exception handler, gerçek İK cevaplarının izlenmesi — hepsi "Bilinen Sınırlamalar" listesinde gerekçeleriyle kayıtlı.
+**Olası sonraki adımlar (karar verilmedi):** basit yönetici parolası, Gönderilmiş klasörü izleyerek İK cevaplarını tanıma, frontend testleri, eşik kalibrasyonu için analitik verisinin kullanılması, imaj dijestlerinin sabitlenmesi.
 
 **Projeye yeni bakan biri için giriş noktası:** `README.md` (kurulum + kullanım), ardından `Proje_Dokumantasyonu.md` (mimari gerekçeler), ardından bu dosya (uygulama geçmişi ve alınan kararlar).

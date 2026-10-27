@@ -51,6 +51,7 @@ Bu soruların cevapları genelde bir yerde **yazılıdır** — ama kağıt üze
          ▼
    Dosya türü nedir?
          │
+         ├─ Markdown / düz metin ──► doğrudan okunur (AI yok)
          ├─ Metin katmanlı PDF ──► pdfplumber (AI yok, %100 doğru)
          ├─ Temiz taranmış görsel ──► glm-ocr (hafif OCR modeli)
          └─ Karmaşık fotoğraf ──► qwen3-vl:8b (güçlü görsel model)
@@ -328,7 +329,7 @@ Komut `backend/seed/*.md` dosyalarını belge olarak yükler, chunk'lar ve embed
 ### Belge Yükleme ve Onaylama
 
 1. `http://localhost:3000/documents` → **"+ Yeni Belge Yükle"**
-2. Dosyayı seçin (`.jpg`, `.png`, `.pdf`)
+2. Dosyayı seçin (`.jpg`, `.png`, `.pdf`, `.md`, `.txt`; Markdown ve düz metin doğrudan okunur, AI gerekmez)
 3. Görünürlüğü seçin: **Şirket içi** (yalnızca çalışanlara kaynak) ya da **Herkese açık** (dışarıdan yazanlara da). Sonradan belge detayından değiştirilebilir.
 4. Görsel yüklüyorsanız kaliteyi seçin:
    - **Temiz** — düz taranmış, iyi ışıklı belge (hızlı OCR)
@@ -340,7 +341,7 @@ Komut `backend/seed/*.md` dosyalarını belge olarak yükler, chunk'lar ve embed
 8. İşleme başarısız olursa belge **Hatalı** durumuna düşer ve hata mesajı görünür; **"Yeniden işle"** ile tekrar denenir. Yazısız ya da çok bozuk bir görselde OCR modeli saçmalayabilir (yönergeyi tekrar etmek, Çince karakterler, aşırı tekrar); sistem bunu tanır ve belgeyi onaya sunmak yerine Hatalı yapar. Onaylı bir belgeyi güncel parçalama yöntemiyle yeniden indekslemek için **"Yeniden parçala"** kullanılır.
 9. Onaylı bir belgeyi aramadan çıkarmak için **"Emekliye ayır"** (metin saklanır, **"Yeniden etkinleştir"** ile geri gelir); belgeyi parçaları ve dosyasıyla birlikte kalıcı olarak kaldırmak için **"Sil"** (iki adımlı onay). İşleme sürerken silinemez.
 
-Yükleme sınırları: yalnızca `.pdf`, `.jpg`, `.jpeg`, `.png`; dosya içeriği uzantısıyla uyuşmalı; üst boyut `MAX_UPLOAD_MB` (varsayılan 20 MB).
+Yükleme sınırları: yalnızca `.pdf`, `.jpg`, `.jpeg`, `.png`, `.md`, `.txt`; dosya içeriği uzantısıyla uyuşmalı (metin dosyaları UTF-8 olmalı); üst boyut `MAX_UPLOAD_MB` (varsayılan 20 MB).
 
 > ⚠️ **Onay adımını ciddiye alın.** OCR bazen sessizce yanlış okur — özellikle sayılar, e-posta adresleri, tarihler. Onaylanan metin, çalışanlara verilecek cevapların kaynağı olur.
 
@@ -362,36 +363,43 @@ Yükleme sınırları: yalnızca `.pdf`, `.jpg`, `.jpeg`, `.png`; dosya içeriğ
 
 ```
 ik-asistan/
-├── docker-compose.yml          # Tüm servislerin tanımı
+├── docker-compose.yml          # Tüm servisler (postgres, redis, migrate, api, worker, beat, frontend)
+├── docker_panel.sh             # tmux ile canlı log paneli (worker+beat / api+frontend / psql)
+├── run_dev.sh, stop_dev.sh     # Honcho + tmux geliştirme ortamı (altyapı Docker'da, uygulama host'ta)
 ├── .env                        # Yapılandırma (Git'e dahil değil)
-├── db/init/                    # Veritabanı ilk kurulum betikleri (pgvector)
-├── .github/workflows/          # GitHub Actions CI
+├── db/init/                    # Veritabanı ilk kurulum betikleri (pgvector, test DB)
+├── .github/workflows/          # GitHub Actions CI (test, lint/build, compose smoke, audit)
+├── Denetim_Raporu.md           # Ekim 2026 denetimi: bulgular, kararlar, kapanış tablosu
 │
 ├── backend/
-│   ├── Dockerfile
+│   ├── Dockerfile              # python:3.12-slim, root olmayan 'app' kullanıcısı (uid 1000)
 │   ├── requirements.txt
+│   ├── pytest.ini              # yalnızca tests/ toplanır
 │   ├── alembic/                # Veritabanı migration'ları
+│   ├── seed/                   # Örnek politika metinleri (python -m app.seed)
 │   ├── app/
 │   │   ├── main.py             # FastAPI uygulaması
-│   │   ├── config.py           # .env doğrulama (pydantic-settings)
+│   │   ├── config.py           # Tüm ayarlar (pydantic-settings); modüller buradan okur
 │   │   ├── celery_app.py       # Celery yapılandırması + Beat zamanlaması
 │   │   ├── logging_config.py   # Merkezi loglama
-│   │   ├── models/             # Veritabanı modelleri (SQLAlchemy)
-│   │   ├── api/                # HTTP endpoint'leri
-│   │   ├── services/           # Belge işleme (OCR, chunk, embedding)
-│   │   ├── rag/                # Vektör arama + LangGraph karar akışı
-│   │   ├── email_service/      # IMAP okuma, SMTP gönderme, thread eşleştirme
-│   │   └── tasks/              # Celery görevleri
-│   ├── scripts/                # Honcho ortamı için sağlık kontrolleri + IMAP smoke betiği
-│   └── tests/                  # pytest testleri
+│   │   ├── seed.py             # Örnek veri yükleyici
+│   │   ├── models/             # Company, AuthorizedSender, Document(Chunk), EmailThread, Message
+│   │   ├── api/                # documents, companies (+senders), analytics, test_panel
+│   │   ├── services/           # Belge işleme: PDF/metin/OCR, OCR sağlık kontrolü, chunk, embedding
+│   │   ├── rag/                # pgvector arama + LangGraph akışı (search → answer → groundedness)
+│   │   ├── email_service/      # IMAP okuma/işaretleme, gönderen çözümleme, thread eşleştirme, SMTP
+│   │   └── tasks/              # Celery görevleri: belge, e-posta, bakım (resolved, saklama)
+│   ├── scripts/                # Honcho ortamı sağlık kontrolleri + smoke_imap.py
+│   └── tests/                  # pytest testleri (sahte Redis/IMAP ile)
 │
 └── frontend/
-    ├── Dockerfile              # Multi-stage build
+    ├── Dockerfile              # Multi-stage build, node:22, root olmayan 'nextjs' kullanıcısı
     ├── app/                    # Next.js sayfaları (App Router)
-    │   ├── documents/          # Belge listesi, detay/onay, yükleme
-    │   ├── test/               # Senaryo simülasyon paneli
+    │   ├── documents/          # Belge listesi, detay (onay/emekli/sil/görünürlük), yükleme
+    │   ├── test/               # Senaryo simülasyonu, takip sorusu, dış gönderen kutusu
     │   └── analytics/          # Analitik panosu
-    └── components/             # Paylaşılan bileşenler (navbar, shadcn/ui)
+    ├── components/             # Navbar, şirket seçici, shadcn/ui
+    └── lib/                    # api.ts (tek API katmanı), company-context, status etiketleri
 ```
 
 ---
@@ -443,11 +451,13 @@ Bu proje bilinçli olarak sınırlı bir kapsamda tutulmuştur. En önemlileri:
 - Güven eşiği (0.55) küçük bir örneklemden tahmin edildi, gerçek ölçekte kalibre edilmedi.
 - Gerçek bir reranker modeli yok (groundedness check, aynı LLM ile ikinci bir doğrulama olarak eklendi).
 
+- Model sınırları gözlemlendi: bazen belgede açıkça yazmayan bir çıkarım yapar ("iki parçaya bölünebilir" → "tek seferde kullanılamaz"), takip sorularında bazen fazla temkinli davranıp belgede olan bilgiye "bilgi yok" diyebilir. Groundedness kontrolü uydurmayı yakalar, aşırı temkinliliği yakalamaz.
+
 **Diğer**
-- Frontend için hiç otomatik test yok.
-- KVKK / veri saklama-silme politikası uygulanmadı.
-- Test verisi (şirketler, belgeler) elle oluşturuluyor — tekrarlanabilir bir seed betiği yok.
-- `run_dev.sh` / `stop_dev.sh` (Honcho + tmux geliştirme ortamı) artık Docker Compose ile çakışıyor; proje Docker moduna geçtiği için güncellenmedi.
+- Frontend için hiç otomatik test yok (CI yalnızca lint ve build çalıştırır).
+- KVKK: yazışmalar için `THREAD_RETENTION_DAYS` ile saklama süresi uygulanabilir (varsayılan kapalı); belgeler elle silinir. Yedekleme stratejisi yok, `docker compose down -v` her şeyi siler.
+- Gerçek İK aynı kutudan çalışana cevap yazarsa bot bunu görmez; çalışanın sonraki takip sorusunu yine kendisi cevaplamaya çalışır (`hr_staff` mesaj tipi hiç dolmaz).
+- `run_dev.sh` / `stop_dev.sh` (Honcho + tmux) yalnızca Postgres ve Redis'i Docker'da başlatır; uygulama servisleri host'ta `.venv` ile çalışır. Docker modunda `docker_panel.sh` kullanın.
 - Ekim 2026'da yapılan kapsamlı denetimin tam bulgu listesi ve açık kararlar `Denetim_Raporu.md` dosyasındadır (Faz 11 bu listenin ilk paketidir).
 
 ---
@@ -456,7 +466,8 @@ Bu proje bilinçli olarak sınırlı bir kapsamda tutulmuştur. En önemlileri:
 
 | Dosya | İçerik |
 |---|---|
-| **`Proje_Dokumantasyonu.md`** | Mimari gerekçeler — hangi teknoloji neden seçildi, sistem nasıl tasarlandı |
-| **`Gelistirme_Plani.md`** | Uygulama geçmişi — faz faz ne yapıldı, hangi sorunlar çıktı ve nasıl çözüldü, hangi kararlar neden alındı |
+| **`Proje_Dokumantasyonu.md`** | Kodlamadan önce yazılmış tasarım dokümanı (tarihsel kayıt) + "Uygulamada Değişenler" tablosu — hangi teknoloji neden seçildi, tasarımdan sonra ne değişti |
+| **`Gelistirme_Plani.md`** | Uygulama geçmişi — Faz 0-21, hangi sorunlar çıktı ve nasıl çözüldü, hangi kararlar neden alındı, bilinen sınırlamalar |
+| **`Denetim_Raporu.md`** | Ekim 2026 denetimi — 54 bulgu, alınan kararlar, paket paket ne yapıldı, kapanış tablosu |
 
-Projeyi yeni inceleyen biri için önerilen okuma sırası: **bu README → `Proje_Dokumantasyonu.md` → `Gelistirme_Plani.md`**
+Projeyi yeni inceleyen biri için önerilen okuma sırası: **bu README → `Proje_Dokumantasyonu.md` → `Gelistirme_Plani.md`**; projenin nasıl gözden geçirildiğini merak eden için `Denetim_Raporu.md`.
