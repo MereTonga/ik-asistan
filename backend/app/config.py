@@ -50,6 +50,10 @@ class Settings(BaseSettings):
     EMAIL_MAX_REPLIES_PER_SENDER_PER_HOUR: int = 5  # aynı gönderene saatte en fazla bu kadar cevap (döngü/istismar koruması)
     EMAIL_SKIP_MEMORY_DAYS: int = 30  # atlanan maillerin (bilinmeyen domain, oto-yanıt) Redis'te hatırlanma süresi
     THREAD_MATCH_WINDOW_DAYS: int = 30  # aynı gönderen + aynı konu kaç gün içinde eski thread'e bağlanır
+    THREAD_RESOLVE_AFTER_DAYS: int = 14  # bu kadar gün hareketsiz kalan 'open' thread'ler 'resolved' olur
+
+    # Celery
+    TASK_SOFT_TIME_LIMIT_SECONDS: int = 1800  # tek bir görev (örn. karmaşık OCR) en fazla bu kadar sürebilir
 
     # Loglama
     LOG_LEVEL: str = "INFO"
