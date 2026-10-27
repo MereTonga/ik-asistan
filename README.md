@@ -328,7 +328,7 @@ ik-asistan/
 │   │   ├── rag/                # Vektör arama + LangGraph karar akışı
 │   │   ├── email_service/      # IMAP okuma, SMTP gönderme, thread eşleştirme
 │   │   └── tasks/              # Celery görevleri
-│   ├── scripts/                # Yardımcı/tanı betikleri
+│   ├── scripts/                # Honcho ortamı için sağlık kontrolleri + IMAP smoke betiği
 │   └── tests/                  # pytest testleri
 │
 └── frontend/

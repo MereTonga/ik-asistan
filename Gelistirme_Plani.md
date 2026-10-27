@@ -101,6 +101,7 @@ bash stop_dev.sh          # aktif görev kontrolü + durdur + doğrula
 | — | `requirements.txt` + CI/CD (GitHub Actions) | ✅ Tamamlandı (ilk denemede başarılı) |
 | 10 | Docker (uygulamanın kendisini container'lama) | ✅ Tamamlandı |
 | 11 | Denetim sonrası Paket 0: gizlilik ve güvenlik hızlı düzeltmeleri | ✅ Tamamlandı (26-27 Ekim 2026) |
+| 12 | Denetim sonrası Paket 1: ölü kod, gereksiz dosya ve kopya kod temizliği | ✅ Tamamlandı (27 Ekim 2026) |
 | — | Genel değerlendirme + README + dokümantasyon kapanışı | ✅ Tamamlandı — **proje kapatıldı** |
 
 ---
@@ -391,6 +392,26 @@ search → (eşik üstü mü?) → generate_answer → groundedness_check → (d
 
 ---
 
+## FAZ 12 — Denetim Sonrası Paket 1 (Temizlik)
+
+**Motivasyon:** Denetimde (`Denetim_Raporu.md`, bölüm 2.3) tespit edilen ölü kod, gereksiz dosya ve kopya kodun kaldırılması. Hiçbir davranış değişikliği hedeflenmedi; her adımda 36 test geçti.
+
+**Yapılanlar:**
+- **12.1** — `backend/scripts/` altındaki Faz 0-6 tek seferlik deney/elle test betikleri (12 dosya) ve `test_files/` silindi; `test_imap_connection.py` → `smoke_imap.py`. `backend/pytest.ini` ile toplama `tests/` ile sınırlandı (daha önce çıplak `pytest`, `scripts/test_*.py` dosyalarını da toplayıp IMAP/Celery çağrısı yapabiliyordu). Honcho paketinin kullandığı `check_connections.py` ve `check_active_tasks.py` kaldı.
+- **12.2** — `run_dev.sh` artık yalnızca `postgres` ve `redis` container'larını başlatıyor; compose'daki `api/worker/beat/frontend` ile Honcho'nun aynı portları istemesi sorunu giderildi (Honcho + tmux ortamı bilinçli olarak korunuyor).
+- **12.3** — `requirements.txt`: hiç import edilmeyen `pymupdf`, yalnızca silinen betiğin kullandığı `numpy` ve doğrudan kullanılmayan `httpx` çıkarıldı. **Not:** `httpx2` kaldı — starlette'in `TestClient`'ı `httpx2`'yi zorunlu tutuyor (`httpx` ile kullanım deprecated); `httpx`'i `ollama` paketi zaten getiriyor.
+- **12.4** — Gerçek akışta hiç kullanılmayan `answer_question` görevi (`app/tasks/rag_tasks.py`) ve Celery `include` kaydı silindi; `documents.py`, `processor.py` ve iki testteki kullanılmayan import'lar temizlendi.
+- **12.5** — Yapılandırma tek kaynağa indirildi: Faz 8.9'da eklenen `pydantic-settings` nesnesi artık **gerçekten** okunuyor. `app/` altındaki 7 `load_dotenv` + 23 `os.getenv` kopyası kaldırıldı, tüm modüller `from app.config import settings` kullanıyor; `GROUNDEDNESS_CHECK_ENABLED` Settings'e alındı (önceden Settings dışında elle parse ediliyordu). `get_db` dört router'daki kopyadan `app/db/session.py`'ye, `UPLOAD_DIR` iki kopyadan `app/config.py`'ye taşındı. `conftest.py` tek `dependency_overrides` ile artık tüm router'ları kapsıyor. Yan kazanım: `EMAIL_DRY_RUN` için pydantic bool parse'ı ile `sender.py`'deki elle `== "true"` parse'ı arasındaki fark ortadan kalktı.
+- **12.6** — Frontend: `components/ui/table.tsx`, 5 şablon SVG, create-next-app README'si, kullanılmayan Geist fontları, `lucide-react` ve `tw-animate-css` kaldırıldı; `shadcn` CLI `devDependencies`'e alındı (build-time `@import "shadcn/tailwind.css"` için yeterli); sekme başlığı "İK Asistanı", `lang="tr"`. `npm run build` başarılı.
+- **12.7** — `docker-compose.yml`: dört serviste tekrar eden `build/env_file/environment` bloğu `x-backend` anchor'ına indirildi; `docker compose config` çıktısının servis bölümü eskisiyle bire bir aynı.
+- **12.8** — Bu doküman, README ve `Denetim_Raporu.md` güncellendi; rapor depoya eklendi.
+
+**Kapsam dışı bırakılan:** Model alanları (`Message.confidence_score`, thread `resolved`/`hr_staff`) migration gerektirdiği için Paket 2'ye bırakıldı. `npm run lint`'in 4 sayfada bildirdiği `react-hooks/set-state-in-effect` hataları bu fazdan önce de vardı, UI düzeltmeleriyle birlikte ele alınacak.
+
+**Faz 12 tamamlandı.**
+
+---
+
 ## Bilinen Sınırlamalar (Genel Özet)
 
 Proje boyunca bulunan, bilinçli olarak MVP kapsamı dışında bırakılan noktaların toplu listesi (detaylar ilgili faz bölümlerinde):
@@ -411,7 +432,7 @@ Proje boyunca bulunan, bilinçli olarak MVP kapsamı dışında bırakılan nokt
 14. Global bir exception handler / genel hata yönetimi gözden geçirmesi yapılmadı (Faz 9'un bir parçası olarak planlanmıştı, kapsam dışına alındı).
 15. Chunk'lama naif (`\n\n` ile paragraf bölme + `min_length` filtresi) — semantik/başlık hiyerarşisine duyarlı bir bölme yapılmadı.
 16. `RAG_CONFIDENCE_THRESHOLD` (0.55) hiç gerçek ölçekte kalibre edilmedi — Faz 1'deki üç örnek cümlelik ölçümden gelen bir başlangıç tahmini.
-17. Test şirketleri ve dokümanları **elle** (`psql` + `seed_test_hr_data.py`) oluşturuluyor — tekrarlanabilir bir seed/fixture betiği yok, `docker compose down -v` sonrası hepsi kayboluyor.
+17. Test şirketleri ve dokümanları **elle** (`psql` / `POST /companies/add` + panelden yükleme) oluşturuluyor — tekrarlanabilir bir seed/fixture betiği yok (eski `seed_test_hr_data.py` Faz 12'de silindi), `docker compose down -v` sonrası hepsi kayboluyor.
 
 ---
 
@@ -467,7 +488,7 @@ Bu projede bilinçli olarak kapsam dışı bırakılan, ayrı/daha sade projeler
 
 ## Şu Anki Durum / Devam Noktası
 
-**Tamamlanan:** Faz 0-10'un tamamı + Groundedness Check + CI; Ekim 2026'da denetim ve Faz 11 (Paket 0). Sonraki paketler için karar listesi `Denetim_Raporu.md` içinde.
+**Tamamlanan:** Faz 0-10'un tamamı + Groundedness Check + CI; Ekim 2026'da denetim, Faz 11 (Paket 0) ve Faz 12 (Paket 1). Sıradaki: Paket 2 (çalışırlık düzeltmeleri) — kapsamı `Denetim_Raporu.md` üzerinden birlikte kararlaştırılacak.
 **Kapsam dışı bırakılan (bilinçli karar):** Kimlik doğrulama, gerçek sunucuya deploy, PostgreSQL RLS, global exception handler — hepsi "Bilinen Sınırlamalar" listesinde gerekçeleriyle kayıtlı.
 
 **Projeye yeni bakan biri için giriş noktası:** `README.md` (kurulum + kullanım), ardından `Proje_Dokumantasyonu.md` (mimari gerekçeler), ardından bu dosya (uygulama geçmişi ve alınan kararlar).
