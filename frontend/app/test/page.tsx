@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { apiFetch, errorMessage } from "@/lib/api";
-import { useCompany } from "@/lib/company-context";
+import { type Company, useCompany } from "@/lib/company-context";
 
 type Scenario = {
   sender: string;
@@ -21,28 +21,17 @@ type SimulationResult = {
   error?: string; // istek seviyesinde hata (ağ, 4xx) — UI'da gösterilir
 };
 
-export default function TestPanel() {
-  const { selected, loading: companyLoading } = useCompany();
-  const [scenarios, setScenarios] = useState<Scenario[] | null>(null);
+// Sonuçlar bu bileşenin state'inde yaşar; üst bileşen şirket değişince `key` ile yeniden
+// kurar, böylece A şirketinin cevabı B şirketi seçiliyken ekranda kalmaz.
+function ScenarioRunner({ scenarios, company }: { scenarios: Scenario[]; company: Company }) {
   const [results, setResults] = useState<Record<number, SimulationResult>>({});
   const [loadingIndex, setLoadingIndex] = useState<number | null>(null);
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    apiFetch<Scenario[]>("/test/scenarios")
-      .then((data) => {
-        setScenarios(data);
-        setError(null);
-      })
-      .catch((err) => setError(errorMessage(err)));
-  }, []);
 
   const handleSimulate = async (index: number) => {
-    if (!selected) return;
     setLoadingIndex(index);
     try {
       const data = await apiFetch<SimulationResult>(
-        `/test/simulate/${index}?company_id=${selected.id}`,
+        `/test/simulate/${index}?company_id=${company.id}`,
         { method: "POST" }
       );
       setResults((prev) => ({ ...prev, [index]: data }));
@@ -54,11 +43,72 @@ export default function TestPanel() {
   };
 
   return (
+    <div className="flex flex-col gap-4">
+      {scenarios.map((scenario, index) => {
+        const result = results[index];
+        return (
+          <Card key={index}>
+            <CardHeader>
+              <CardTitle className="flex flex-wrap items-center justify-between gap-2 text-base">
+                {scenario.subject}
+                <span className="text-sm font-normal text-slate-400">{scenario.sender}</span>
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="flex flex-col gap-3">
+              <p className="text-sm text-slate-600">{scenario.body}</p>
+
+              <Button
+                variant="outline"
+                onClick={() => handleSimulate(index)}
+                disabled={loadingIndex !== null}
+              >
+                {loadingIndex === index ? "Çalışıyor..." : "Bu Senaryoyu Çalıştır"}
+              </Button>
+
+              {result && (
+                <div className="rounded border border-slate-200 p-3">
+                  {result.status === "error" ? (
+                    <Badge variant="destructive">Hata: {result.error}</Badge>
+                  ) : result.status === "skipped" ? (
+                    <Badge variant="secondary">Atlandı: {result.reason}</Badge>
+                  ) : (
+                    <>
+                      <Badge variant={result.was_escalated ? "destructive" : "default"}>
+                        {result.was_escalated ? "Yönlendirildi" : "Cevaplandı"}
+                      </Badge>
+                      <p className="mt-2 whitespace-pre-wrap text-sm">{result.answer}</p>
+                    </>
+                  )}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        );
+      })}
+    </div>
+  );
+}
+
+export default function TestPanel() {
+  const { selected, loading: companyLoading } = useCompany();
+  const [scenarios, setScenarios] = useState<Scenario[] | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    apiFetch<Scenario[]>("/test/scenarios")
+      .then((data) => {
+        setScenarios(data);
+        setError(null);
+      })
+      .catch((err) => setError(errorMessage(err)));
+  }, []);
+
+  return (
     <div className="min-h-screen bg-slate-100 p-4 md:p-8">
       <h1 className="mb-2 text-2xl font-bold">Test Paneli — Senaryo Simülasyonu</h1>
       <p className="mb-6 text-sm text-slate-500">
         Senaryolar {selected ? <strong>{selected.name}</strong> : "seçili şirket"} için çalışır; simülasyon hiçbir
-        zaman gerçek e-posta göndermez.
+        zaman gerçek e-posta göndermez. Şirket değiştiğinde sonuçlar sıfırlanır.
       </p>
 
       {error && (
@@ -71,49 +121,9 @@ export default function TestPanel() {
 
       {!error && scenarios === null && <p className="text-slate-500">Yükleniyor...</p>}
 
-      <div className="flex flex-col gap-4">
-        {scenarios?.map((scenario, index) => {
-          const result = results[index];
-          return (
-            <Card key={index}>
-              <CardHeader>
-                <CardTitle className="flex flex-wrap items-center justify-between gap-2 text-base">
-                  {scenario.subject}
-                  <span className="text-sm font-normal text-slate-400">{scenario.sender}</span>
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="flex flex-col gap-3">
-                <p className="text-sm text-slate-600">{scenario.body}</p>
-
-                <Button
-                  variant="outline"
-                  onClick={() => handleSimulate(index)}
-                  disabled={loadingIndex !== null || !selected}
-                >
-                  {loadingIndex === index ? "Çalışıyor..." : "Bu Senaryoyu Çalıştır"}
-                </Button>
-
-                {result && (
-                  <div className="rounded border border-slate-200 p-3">
-                    {result.status === "error" ? (
-                      <Badge variant="destructive">Hata: {result.error}</Badge>
-                    ) : result.status === "skipped" ? (
-                      <Badge variant="secondary">Atlandı: {result.reason}</Badge>
-                    ) : (
-                      <>
-                        <Badge variant={result.was_escalated ? "destructive" : "default"}>
-                          {result.was_escalated ? "Yönlendirildi" : "Cevaplandı"}
-                        </Badge>
-                        <p className="mt-2 whitespace-pre-wrap text-sm">{result.answer}</p>
-                      </>
-                    )}
-                  </div>
-                )}
-              </CardContent>
-            </Card>
-          );
-        })}
-      </div>
+      {scenarios && selected && (
+        <ScenarioRunner key={selected.id} scenarios={scenarios} company={selected} />
+      )}
     </div>
   );
 }
