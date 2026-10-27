@@ -18,7 +18,7 @@ tmux new-session -d -s "$SESSION" -n izleme "docker compose logs -f --tail=100 w
 WORKER_PANE=$(tmux display-message -p -t "$SESSION" '#{pane_id}')
 
 API_PANE=$(tmux split-window -h -t "$WORKER_PANE" -P -F '#{pane_id}' "docker compose logs -f --tail=50 api frontend")
-PSQL_PANE=$(tmux split-window -v -t "$API_PANE" -P -F '#{pane_id}' "docker compose exec postgres psql -U ik_asistan -d ik_asistan_db")
+PSQL_PANE=$(tmux split-window -v -t "$API_PANE" -P -F '#{pane_id}' "docker compose exec -e PGTZ=${TZ:-Europe/Istanbul} postgres psql -U ik_asistan -d ik_asistan_db")
 
 tmux set-option -t "$SESSION" pane-border-status top
 tmux select-pane -t "$WORKER_PANE" -T "worker + beat (RAG / OCR / e-posta)"

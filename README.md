@@ -221,7 +221,7 @@ EMAIL_POLL_INTERVAL_SECONDS=300
 LOG_LEVEL=INFO
 ```
 
-İsteğe bağlı ayarlar (varsayılanları `backend/app/config.py` içinde): `MAX_UPLOAD_MB` (20), `EMAIL_MAX_REPLIES_PER_SENDER_PER_HOUR` (5), `EMAIL_SKIP_MEMORY_DAYS` (30), `THREAD_MATCH_WINDOW_DAYS` (30), `THREAD_RESOLVE_AFTER_DAYS` (14), `THREAD_RETENTION_DAYS` (0 = kapalı; >0 ise bu kadar günden eski yazışmalar her gece silinir), `TASK_SOFT_TIME_LIMIT_SECONDS` (1800), `NEXT_PUBLIC_API_URL` (frontend build-arg, `http://localhost:8000`).
+İsteğe bağlı ayarlar (varsayılanları `backend/app/config.py` içinde): `MAX_UPLOAD_MB` (20), `EMAIL_MAX_REPLIES_PER_SENDER_PER_HOUR` (5), `EMAIL_SKIP_MEMORY_DAYS` (30), `THREAD_MATCH_WINDOW_DAYS` (30), `THREAD_RESOLVE_AFTER_DAYS` (14), `THREAD_RETENTION_DAYS` (0 = kapalı; >0 ise bu kadar günden eski yazışmalar her gece silinir), `TASK_SOFT_TIME_LIMIT_SECONDS` (1800), `NEXT_PUBLIC_API_URL` (frontend build-arg, `http://localhost:8000`), `TZ` (container'ların log/zamanlama saat dilimi, `Europe/Istanbul`; veritabanı her zaman UTC saklar, panel tarayıcının saat dilimini gösterir).
 
 > **Ağ notu:** Compose, tüm portları (`5432`, `6379`, `8000`, `3000`) yalnızca `127.0.0.1`'e bağlar; servisler aynı makineden `localhost` ile erişilir, yerel ağdaki diğer cihazlara açılmaz. Redis parola ister, Postgres parolası ve Redis parolası `.env`'den gelir. **Mevcut bir `pgdata` volume'unda `POSTGRES_PASSWORD` değerini değiştirmek parolayı değiştirmez** (parola ilk kurulumda belirlenir); değiştirmek için `ALTER USER ik_asistan PASSWORD '...'` çalıştırın ya da `docker compose down -v` ile sıfırdan kurun.
 

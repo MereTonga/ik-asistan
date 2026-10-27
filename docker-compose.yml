@@ -8,6 +8,8 @@ x-backend: &backend
     DATABASE_URL: postgresql://ik_asistan:${POSTGRES_PASSWORD}@postgres:5432/ik_asistan_db
     REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379/0
     OLLAMA_BASE_URL: http://host.docker.internal:11434
+    # Log zaman damgalari ve Celery zamanlamasi icin yerel saat dilimi (veritabani UTC'de kalir)
+    TZ: ${TZ:-Europe/Istanbul}
 
 services:
   postgres:
@@ -85,6 +87,8 @@ services:
         NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:8000}
     ports:
       - "127.0.0.1:3000:3000"
+    environment:
+      TZ: ${TZ:-Europe/Istanbul}
     depends_on:
       - api
 
