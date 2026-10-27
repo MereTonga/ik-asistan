@@ -1,0 +1,14 @@
+# Imaja girmemesi gerekenler (COPY . . tum klasoru kopyalar)
+uploads/
+tests/
+scripts/
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+__pycache__/
+*.pyc
+celerybeat-schedule*
+*.md
+.dockerignore
+Dockerfile

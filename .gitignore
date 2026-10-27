@@ -5,3 +5,9 @@ __pycache__/
 backend/uploads/
 celerybeat-schedule*
 logs/
+
+# Test / coverage artefaktlari
+.coverage
+.coverage.*
+htmlcov/
+.pytest_cache/
