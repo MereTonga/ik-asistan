@@ -9,6 +9,24 @@ from app.db.session import Base
 
 EMBEDDING_BOYUTU = 1024  # qwen3-embedding:0.6b'nin ürettiği vektör boyutu
 
+
+class DocumentStatus:
+    """Belgenin yaşam döngüsü (String kolon, Enum değil - bilinçli karar, bkz. Faz 2).
+
+    upload → PROCESSING → (worker) → PENDING_APPROVAL | FAILED
+    PENDING_APPROVAL → (onay) → INDEXING → (worker) → APPROVED | PENDING_APPROVAL (hata)
+    APPROVED → (yeniden parçala) → INDEXING → APPROVED
+    FAILED | PENDING_APPROVAL → (yeniden işle) → PROCESSING
+    """
+    PROCESSING = "processing"            # OCR / PDF çıkarımı sürüyor
+    PENDING_APPROVAL = "pending_approval"  # metin hazır, insan onayı bekliyor
+    FAILED = "failed"                    # çıkarım başarısız, error_message dolu
+    INDEXING = "indexing"                # chunk + embedding üretiliyor
+    APPROVED = "approved"                # aramaya açık
+
+    ALL = (PROCESSING, PENDING_APPROVAL, FAILED, INDEXING, APPROVED)
+
+
 class Document(Base):
     __tablename__ = "documents"
 
@@ -16,11 +34,13 @@ class Document(Base):
     company_id = Column(UUID(as_uuid=True), ForeignKey("companies.id"), nullable=False)
 
     original_filename = Column(String, nullable=False)
-    stored_filename = Column(String, nullable=True)  # YENİ SATIR - diskteki gerçek dosya adı
-    source_type = Column(String, nullable=False)  # 'pdf_text' | 'ocr_clean' | 'ocr_complex'
-    status = Column(String, nullable=False, default="pending_approval")  # 'pending_approval' | 'approved'
+    stored_filename = Column(String, nullable=True)  # diskteki gerçek (UUID'li) dosya adı
+    source_type = Column(String, nullable=False)  # 'pending' | 'pdf_text' | 'ocr_clean' | 'ocr_complex'
+    document_quality = Column(String, nullable=True)  # görseller için 'clean' | 'complex' (yeniden işlemede gerekir)
+    status = Column(String, nullable=False, default=DocumentStatus.PENDING_APPROVAL)  # bkz. DocumentStatus
 
     raw_extracted_text = Column(Text, nullable=True)  # onay ekranında gösterilecek ham çıktı
+    error_message = Column(Text, nullable=True)  # son işleme/indeksleme hatası (varsa)
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
     # Bir Document, birden fazla chunk'a sahip olabilir

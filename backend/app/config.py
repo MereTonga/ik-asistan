@@ -30,6 +30,9 @@ class Settings(BaseSettings):
     EMBEDDING_MODEL: str
     CONTEXT_SIZE: int = 4096
 
+    # Belge yükleme
+    MAX_UPLOAD_MB: int = 20
+
     # RAG
     RAG_CONFIDENCE_THRESHOLD: float = 0.55
     RAG_TOP_K: int = 3
