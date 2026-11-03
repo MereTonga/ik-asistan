@@ -13,7 +13,7 @@
 | Konu | Karar |
 |---|---|
 | 44 bulgunun bağımsız ajan doğrulaması | **Yapılsın.** Limit biterse süreç durdurulacak, kullanıcı gelince devam. |
-| `temiz_belge.jpg` | **Dokunulmayacak.** Kullanıcı haklı: dosya bir kitap sayfasının fotoğrafı (JPEG, 1080×1920). Raporun ilk sürümünde dosya adı karıştırıldı. Gerçek e-posta ekran görüntüsü **`karmasik_foto.jpg`** (aslında PNG, 1550×716; İstanbul Beykent Üniversitesi lisansüstü başvuru maili, kurumsal adresler ve telefon). Bu kullanıcının kendi e-postası; kaldırma kararı kullanıcıya ait, henüz verilmedi. |
+| `temiz_belge.jpg` | **Dokunulmayacak.** Kullanıcı haklı: dosya bir kitap sayfasının fotoğrafı (JPEG, 1080×1920). Raporun ilk sürümünde dosya adı karıştırıldı. Gerçek e-posta ekran görüntüsü **`karmasik_foto.jpg`** (aslında PNG, 1550×716; bir kurumdan gelen yazışma, üçüncü kişilerin kurumsal adresleri ve telefon). Kullanıcı kararı (27 Ekim): hassas sayılmadı, depoda kalıyor. |
 | `test_emails.json` adresleri | **Değişmeyecek.** Adresler rastgele/uydurma ve farklı servislerden olması bilinçli. Claude'un `example.com` önerisinin gerekçesi: RFC 2606 ile ayrılmış `example.*` alan adlarına mail asla teslim edilmez; `ad.soyad@gmail.com` biçimindeki uydurma adreslerin gerçek bir kişiye ait olma olasılığı yüksek ve test paneli `EMAIL_DRY_RUN=false` iken bu adreslere gerçekten mail gönderiyor (F005). Test paneli gönderimsiz hale getirilince bu risk zaten ortadan kalkar; adresler kalabilir. |
 | Paket 0 (diğer maddeler) | **Uygulandı (27 Ekim, Faz 11.1–11.4, commit'ler `5789664`, `fa13386`, `b375faa` + docs):** `.coverage` çıkarıldı + ignore; `.dockerignore`; test paneli gönderimsiz (`send_email=False`) + 2 test; portlar `127.0.0.1`; Redis parolalı; parolalar `.env`'de. 36 test geçti. |
 | Bağımsız ajan doğrulaması | **Durduruldu (kullanıcı kararı, 27 Ekim):** 26/54 bulgu iki ajanla doğrulandı, 0 çürütme; kalan 28 yalnızca Claude'un kod okuması ve yerel yeniden üretimleriyle doğrulanmış durumda. Limit maliyeti nedeniyle devam edilmedi. |
@@ -297,11 +297,11 @@ Belgelenmişlik: already_documented=true doğru (README:356-359, Gelistirme_Plan
 - **DÜZELTME (26 Eki, Claude):** Aşağıdaki metinde dosya adı karıştırılmış. E-posta ekran görüntüsü `backend/scripts/test_files/karmasik_foto.jpg` (PNG, 1550×716); `temiz_belge.jpg` bir kitap sayfasının fotoğrafı (JPEG, 1080×1920) ve kişisel veri içermiyor.
 
 - **Konum:** `backend/scripts/test_files/temiz_belge.jpg:1`  · **Belgelenmiş sınırlama mı:** hayır · **Bulan mercekler:** security
-- **İddia:** `temiz_belge.jpg` sentetik İK belgesi değil; İstanbul Beykent Üniversitesi Lisansüstü Kayıt'tan gelen gerçek bir başvuru e-postasının Gmail ekran görüntüsü (gönderici, üç kurumsal kişisel adres, telefon, tarih…
-- **Kanıt:** Dosya görüntülendi: 'İç Mimarlık Tezli YL Programına Başvurunuz Hk.', `lisansustukayit@beykent.edu.tr`, üç `@beykent.edu.tr`, 'Tel: 444 1 997'. test_emails.json:3,:8,:48 gmail/outlook/protonmail adresleri…
+- **İddia:** `temiz_belge.jpg` sentetik İK belgesi değil; bir kurumdan gelen gerçek bir e-postanın Gmail ekran görüntüsü (gönderici, üçüncü kişilere ait kurumsal adresler, telefon, tarih…
+- **Kanıt:** Dosya görüntülendi; kurum adı ve adresler bu rapora alınmadı. test_emails.json:3,:8,:48 gmail/outlook/protonmail adresleri…
 - **Etki:** Repo paylaşılırsa üçüncü kişilerin ve sahibin kişisel verileri yayılır (KVKK/etik)…
 - **Öneri:** `temiz_belge.jpg`'yi sentetik belgeyle değiştirin; adresleri `@example.com` yapın; paylaşılacaksa `git filter-repo --path ..
-- **Kendi kontrolüm:** Kendi kontrolüm: görsel açıldı; gerçek bir Gmail ekran görüntüsü (İstanbul Beykent Üniversitesi lisansüstü başvuru maili, üç kişisel kurumsal adres, telefon). İlk commit cca28f6 (2026-08-01) ile depoya girmiş; uzak depo github.com/MereTonga/ik-asistan.
+- **Kendi kontrolüm:** Görsel açıldı; gerçek bir Gmail ekran görüntüsü (bir kuruma ait yazışma, üçüncü kişilerin kurumsal adresleri, telefon). İlk commit cca28f6 (2026-08-01) ile depoya girmiş. Kullanıcı kararı (27 Ekim): dosya hassas sayılmadı, depoda kalıyor.
 
 
 ## Doğruluk / hata (17)
