@@ -41,10 +41,16 @@ def _is_remembered_skip(message_id: str) -> bool:
 
 def clear_skip_memory() -> int:
     """Atlama belleğini boşaltır (şirket / yetkili gönderen eklendiğinde): daha önce 'bilinmeyen domain'
-    diye atlanan mailler bir sonraki turda yeniden değerlendirilir. Silinen kayıt sayısını döner."""
-    keys = list(redis_client.scan_iter(match=f"{SKIP_KEY_PREFIX}*"))
-    for key in keys:
-        redis_client.delete(key)
+    diye atlanan mailler bir sonraki turda yeniden değerlendirilir. Silinen kayıt sayısını döner.
+    Redis'e ulaşılamıyorsa uyarı loglar ve 0 döner; şirket ekleme işlemi bu yüzden başarısız olmaz
+    (bellek en geç EMAIL_SKIP_MEMORY_DAYS sonra kendiliğinden boşalır)."""
+    try:
+        keys = list(redis_client.scan_iter(match=f"{SKIP_KEY_PREFIX}*"))
+        for key in keys:
+            redis_client.delete(key)
+    except redis.exceptions.RedisError as e:
+        logger.warning(f"Atlama belleği temizlenemedi (Redis erişilemiyor): {e}")
+        return 0
     if keys:
         logger.info(f"Atlama belleği temizlendi: {len(keys)} kayıt")
     return len(keys)
